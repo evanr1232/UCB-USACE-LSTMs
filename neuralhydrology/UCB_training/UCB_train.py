@@ -18,6 +18,7 @@ TODO:
 from pathlib import Path
 import pickle
 import matplotlib.pyplot as plt
+import pandas as pd
 
 from neuralhydrology.utils.config import Config
 from neuralhydrology.training.train import start_training
@@ -40,7 +41,7 @@ class UCB_trainer:
         self._physics_informed = physics_informed
         self._gpu = gpu
         self._data_dir = path_to_csv_folder
-        
+
         self._config = None
         self._model = None
         self._test_predictions = None
@@ -57,7 +58,7 @@ class UCB_trainer:
             self._model = self._train_model() # returns run directory of single model
             self._eval_model(self._model)
         else:
-            self.model = self._train_ensemble() # returns dict with predictions on test set and metrics
+            self._model = self._train_ensemble() # returns dict with predictions on test set and metrics
         return
 
     def results(self) -> dict:
@@ -66,15 +67,43 @@ class UCB_trainer:
         """
         self._get_predictions()
         self._metrics = calculate_all_metrics(self._test_observed, self._test_predictions)
-        
+
         self._generate_obs_sim_plt()
+        self._generate_csv()
         return self._metrics
+
+    def _generate_csv(self):
+        """
+        Private method to generate a CSV file of observed and predicted values. Used in the .results() function.
+        :return:
+        """
+        if self._test_observed is None or self._test_predictions is None:
+            print("[ERROR] Observed or predicted values are None. Cannot generate CSV.")
+            return
+
+        try:
+            if self._num_ensemble_members == 1:
+                dates = self._test_observed['date'].values
+            else:
+                dates = self._test_observed['datetime'].values
+
+            df = pd.DataFrame({
+                'Date': dates,
+                'Observed': self._test_observed.values,
+                'Predicted': self._test_predictions.values
+            })
+
+            output_path = Path(self._config.run_dir) / "results_output.csv"
+            df.to_csv(output_path, index=False)
+            print(f"[INFO] CSV output saved at: {output_path}")
+        except Exception as e:
+            print(f"[ERROR] Failed to generate CSV: {e}")
 
     def _train_model(self) -> Path:
         """
         Private method to train an individual model. Returns the path to the model results.
         """
-    
+
         # check if a GPU has been specified. If yes, overwrite config
         if self._gpu is not None and self._gpu >= 0:
             self._config.device = f"cuda:{self._gpu}"
@@ -87,7 +116,7 @@ class UCB_trainer:
 
     def _eval_model(self, run_directory, period="test"):
         """
-        Private method to evaluate an individual model after training. 
+        Private method to evaluate an individual model after training.
         """
         eval_run(run_dir=run_directory, period=period)
         return
@@ -101,10 +130,10 @@ class UCB_trainer:
             path = self._train_model()
             paths.append(path)
 
-        #for each path evaluate the model    
+        #for each path evaluate the model
         for p in paths:
             self._eval_model(run_directory=p, period=period)
-            #self._eval_model(run_dir=p, period="validation") 
+            #self._eval_model(run_dir=p, period="validation")
 
         ensemble_run = create_results_ensemble(paths, period=period)
         return ensemble_run
@@ -114,15 +143,17 @@ class UCB_trainer:
         Private method to get and return predicted values and metrics after training and evaluation.
         """
         if self._num_ensemble_members == 1:
+            # Single model case
             with open(self._model / "test" / f"model_epoch{str(self._config.epochs).zfill(3)}" / "test_results.p", "rb") as fp:
                 results = pickle.load(fp)
                 self._test_observed = results['Tuler']['1D']['xr']['ReservoirInflowFLOW-OBSERVED_obs'].sel(time_step=0)
                 self._test_predictions = results['Tuler']['1D']['xr']['ReservoirInflowFLOW-OBSERVED_sim'].sel(time_step=0)
 
         else:
+            # Ensemble case
             self._test_observed = self._model['Tuler']['1D']['xr']['ReservoirInflowFLOW-OBSERVED_obs']
             self._test_predictions = self._model['Tuler']['1D']['xr']['ReservoirInflowFLOW-OBSERVED_sim']
-        
+
         return
 
     def _create_config(self) -> Config:
