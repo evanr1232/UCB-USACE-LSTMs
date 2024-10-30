@@ -14,7 +14,6 @@ TODO:
     - make default args better
     - add percentiles to ensemble runs
 '''
-
 from pathlib import Path
 import pickle
 import matplotlib.pyplot as plt
@@ -188,4 +187,57 @@ class UCB_trainer:
         ax.plot(self._test_predictions[date_indexer], self._test_predictions, label="Sim")
         ax.set_ylabel("ReservoirInflowFLOW-OBSERVED")
         ax.legend()
+        plt.show()
+
+    def _plot_day_of_year_average(self):
+        """
+        Private method to plot day-of-year averages of observed and predicted values.
+        """
+        if self._test_observed is None or self._test_predictions is None:
+            print("[ERROR] Observed or predicted values are None. Cannot generate plot.")
+            return
+
+        date_indexer = "date" if self._num_ensemble_members == 1 else "datetime"
+
+        observed_series = pd.Series(self._test_observed.values, index=self._test_observed[date_indexer].values)
+        predicted_series = pd.Series(self._test_predictions.values, index=self._test_predictions[date_indexer].values)
+        observed_doy_avg = observed_series.groupby(observed_series.index.dayofyear).mean()
+        predicted_doy_avg = predicted_series.groupby(predicted_series.index.dayofyear).mean()
+
+        fig, ax = plt.subplots(figsize=(16, 10))
+        ax.plot(observed_doy_avg.index, observed_doy_avg, label="Observed DOY Avg")
+        ax.plot(predicted_doy_avg.index, predicted_doy_avg, label="Predicted DOY Avg")
+        ax.set_xlabel("Day of Year")
+        ax.set_ylabel("Average Reservoir Inflow")
+        ax.legend()
+        plt.title("Day-of-Year Average Plot of Observed vs. Predicted")
+        plt.show()
+
+    def _plot_month_of_year_average(self):
+        """
+        Private method to plot month-of-year averages of observed and predicted values.
+        """
+        if self._test_observed is None or self._test_predictions is None:
+            print("[ERROR] Observed or predicted values are None. Cannot generate plot.")
+            return
+
+        date_indexer = "date" if self._num_ensemble_members == 1 else "datetime"
+
+        observed_series = pd.Series(self._test_observed.values, index=self._test_observed[date_indexer].values)
+        predicted_series = pd.Series(self._test_predictions.values, index=self._test_predictions[date_indexer].values)
+
+        observed_moy_avg = observed_series.groupby(observed_series.index.month).mean()
+        predicted_moy_avg = predicted_series.groupby(predicted_series.index.month).mean()
+
+        month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+        fig, ax = plt.subplots(figsize=(16, 10))
+        ax.plot(observed_moy_avg.index, observed_moy_avg, label="Observed MOY Avg")
+        ax.plot(predicted_moy_avg.index, predicted_moy_avg, label="Predicted MOY Avg")
+        ax.set_xlabel("Month")
+        ax.set_xticks(range(1, 13))
+        ax.set_xticklabels(month_names)
+        ax.set_ylabel("Average Reservoir Inflow")
+        ax.legend()
+        plt.title("Month-of-Year Average Plot of Observed vs. Predicted")
         plt.show()
