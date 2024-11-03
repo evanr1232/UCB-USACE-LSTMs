@@ -22,8 +22,10 @@ import matplotlib.pyplot as plt
 from neuralhydrology.utils.config import Config
 from neuralhydrology.training.train import start_training
 from neuralhydrology.nh_run import eval_run
-from neuralhydrology.utils.nh_results_ensemble import create_results_ensemble
+# from neuralhydrology.utils.nh_results_ensemble import create_results_ensemble
+from neuralhydrology.utils.nh_results_ensemble_updated import create_results_ensemble
 from neuralhydrology.evaluation.metrics import calculate_all_metrics
+
 
 class UCB_trainer:
     def __init__(self, path_to_csv_folder: Path, hyperparams: dict, num_ensemble_members: int = 1, physics_informed: bool = True, gpu: int = -1):
@@ -40,7 +42,7 @@ class UCB_trainer:
         self._physics_informed = physics_informed
         self._gpu = gpu
         self._data_dir = path_to_csv_folder
-        
+
         self._config = None
         self._model = None
         self._test_predictions = None
@@ -54,10 +56,11 @@ class UCB_trainer:
         Public method to handle the training and evaluating process for individual models or ensembles. Sets self.model.
         """
         if self._num_ensemble_members == 1:
-            self._model = self._train_model() # returns run directory of single model
+            self._model = self._train_model()  # returns run directory of single model
             self._eval_model(self._model)
         else:
-            self.model = self._train_ensemble() # returns dict with predictions on test set and metrics
+            # returns dict with predictions on test set and metrics
+            self.model = self._train_ensemble()
         return
 
     def results(self) -> dict:
@@ -65,8 +68,9 @@ class UCB_trainer:
         Public method to return metrics and plot data visualizations of model preformance.
         """
         self._get_predictions()
-        self._metrics = calculate_all_metrics(self._test_observed, self._test_predictions)
-        
+        self._metrics = calculate_all_metrics(
+            self._test_observed, self._test_predictions)
+
         self._generate_obs_sim_plt()
         return self._metrics
 
@@ -74,7 +78,7 @@ class UCB_trainer:
         """
         Private method to train an individual model. Returns the path to the model results.
         """
-    
+
         # check if a GPU has been specified. If yes, overwrite config
         if self._gpu is not None and self._gpu >= 0:
             self._config.device = f"cuda:{self._gpu}"
@@ -96,15 +100,15 @@ class UCB_trainer:
         """
         Private method to train and evaluate an ensemble of models.
         """
-        paths = [] #store the path of the results of the model
+        paths = []  # store the path of the results of the model
         for _ in range(self._num_ensemble_members):
             path = self._train_model()
             paths.append(path)
 
-        #for each path evaluate the model    
+        # for each path evaluate the model
         for p in paths:
             self._eval_model(run_directory=p, period=period)
-            #self._eval_model(run_dir=p, period="validation") 
+            # self._eval_model(run_dir=p, period="validation")
 
         ensemble_run = create_results_ensemble(paths, period=period)
         return ensemble_run
@@ -116,13 +120,15 @@ class UCB_trainer:
         if self._num_ensemble_members == 1:
             with open(self._model / "test" / f"model_epoch{str(self._config.epochs).zfill(3)}" / "test_results.p", "rb") as fp:
                 results = pickle.load(fp)
-                self._test_observed = results['Tuler']['1D']['xr']['ReservoirInflowFLOW-OBSERVED_obs'].sel(time_step=0)
-                self._test_predictions = results['Tuler']['1D']['xr']['ReservoirInflowFLOW-OBSERVED_sim'].sel(time_step=0)
+                self._test_observed = results['Tuler']['1D']['xr']['ReservoirInflowFLOW-OBSERVED_obs'].sel(
+                    time_step=0)
+                self._test_predictions = results['Tuler']['1D']['xr']['ReservoirInflowFLOW-OBSERVED_sim'].sel(
+                    time_step=0)
 
         else:
             self._test_observed = self._model['Tuler']['1D']['xr']['ReservoirInflowFLOW-OBSERVED_obs']
             self._test_predictions = self._model['Tuler']['1D']['xr']['ReservoirInflowFLOW-OBSERVED_sim']
-        
+
         return
 
     def _create_config(self) -> Config:
@@ -133,7 +139,7 @@ class UCB_trainer:
 
         if 'save_weights_every' not in self._hyperparams:
             self._hyperparams['save_weights_every'] = self._hyperparams['epochs']
-            
+
         config.update_config(self._hyperparams)
         config.update_config({'data_dir': self._data_dir})
         config.update_config({'physics_informed': self._physics_informed})
@@ -143,7 +149,7 @@ class UCB_trainer:
             raise ValueError(
                 "The 'save_weights_every' parameter must divide the 'epochs' parameter evenly. Ensure 'epochs' is a multiple of "
                 "'save_weights_every' to use the most recent weights for the final model."
-                )
+            )
 
         return
 
@@ -152,9 +158,11 @@ class UCB_trainer:
         Private method to plot observed and simulated values over time.
         """
         date_indexer = "date" if self._num_ensemble_members == 1 else "datetime"
-        fig, ax = plt.subplots(figsize=(16,10))
-        ax.plot(self._test_observed[date_indexer], self._test_observed, label="Obs")
-        ax.plot(self._test_predictions[date_indexer], self._test_predictions, label="Sim")
+        fig, ax = plt.subplots(figsize=(16, 10))
+        ax.plot(self._test_observed[date_indexer],
+                self._test_observed, label="Obs")
+        ax.plot(self._test_predictions[date_indexer],
+                self._test_predictions, label="Sim")
         ax.set_ylabel("ReservoirInflowFLOW-OBSERVED")
         ax.legend()
         plt.show()
