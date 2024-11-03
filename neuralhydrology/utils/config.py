@@ -133,12 +133,9 @@ class Config(object):
         else:
             raise FileExistsError(yml_path)
 
-    def update_config(self, yml_path_or_dict: Union[Path, dict], dev_mode: bool = False):
-        """Update config arguments.
-        
-        Useful e.g. in the context of fine-tuning or when continuing to train from a checkpoint to adapt for example the
-        learning rate, train basin files or anything else.
-        
+    def update_config(self, yml_path_or_dict: Union[Path, dict], dev_mode: bool = False, new_dynamic_inputs: Optional[List[str]] = None):
+        """Update config arguments, with an option to set specific dynamic inputs for training.
+
         Parameters
         ----------
         yml_path_or_dict : Union[Path, dict]
@@ -148,6 +145,9 @@ class Config(object):
             If dev_mode is off, the config creation will fail if there are unrecognized keys in the passed config
             specification. dev_mode can be activated either through this parameter or by setting ``dev_mode: True``
             in `yml_path_or_dict`.
+        new_dynamic_inputs : list of str, optional
+            A list of new dynamic input parameters to use for training the model. If provided, this will replace the
+            existing 'dynamic_inputs' list in the configuration.
 
         Raises
         ------
@@ -155,9 +155,11 @@ class Config(object):
             If the passed configuration specification is neither a Path nor a dict, or if `dev_mode` is off (default)
             and the config file or dict contain unrecognized keys.
         """
-        new_config = Config(yml_path_or_dict, dev_mode=dev_mode)
+        new_config = Config(yml_path_or_dict, dev_mode=dev_mode).as_dict()
+        self._cfg.update(new_config)
 
-        self._cfg.update(new_config.as_dict())
+        if new_dynamic_inputs is not None:
+            self._cfg['dynamic_inputs'] = new_dynamic_inputs
 
     def _get_value_verbose(self, key: str) -> Union[float, int, str, list, dict, Path, pd.Timestamp]:
         """Use this function internally to return attributes of the config that are mandatory"""

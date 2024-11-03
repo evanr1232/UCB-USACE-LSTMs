@@ -14,10 +14,10 @@ TODO:
     - make default args better
     - add percentiles to ensemble runs
 '''
-
 from pathlib import Path
 import pickle
 import matplotlib.pyplot as plt
+import pandas as pd
 
 from neuralhydrology.utils.config import Config
 from neuralhydrology.training.train import start_training
@@ -59,8 +59,12 @@ class UCB_trainer:
             self._model = self._train_model()  # returns run directory of single model
             self._eval_model(self._model)
         else:
+<<<<<<< HEAD
             # returns dict with predictions on test set and metrics
             self.model = self._train_ensemble()
+=======
+            self._model = self._train_ensemble() # returns dict with predictions on test set and metrics
+>>>>>>> 2151852148d55d61001d4db80eeedc63e6847227
         return
 
     def results(self) -> dict:
@@ -68,11 +72,43 @@ class UCB_trainer:
         Public method to return metrics and plot data visualizations of model preformance.
         """
         self._get_predictions()
+<<<<<<< HEAD
         self._metrics = calculate_all_metrics(
             self._test_observed, self._test_predictions)
+=======
+        self._metrics = calculate_all_metrics(self._test_observed, self._test_predictions)
+>>>>>>> 2151852148d55d61001d4db80eeedc63e6847227
 
         self._generate_obs_sim_plt()
+        self._generate_csv()
         return self._metrics
+
+    def _generate_csv(self):
+        """
+        Private method to generate a CSV file of observed and predicted values. Used in the .results() function.
+        :return:
+        """
+        if self._test_observed is None or self._test_predictions is None:
+            print("[ERROR] Observed or predicted values are None. Cannot generate CSV.")
+            return
+
+        try:
+            if self._num_ensemble_members == 1:
+                dates = self._test_observed['date'].values
+            else:
+                dates = self._test_observed['datetime'].values
+
+            df = pd.DataFrame({
+                'Date': dates,
+                'Observed': self._test_observed.values,
+                'Predicted': self._test_predictions.values
+            })
+
+            output_path = Path(self._config.run_dir) / "results_output.csv"
+            df.to_csv(output_path, index=False)
+            print(f"[INFO] CSV output saved at: {output_path}")
+        except Exception as e:
+            print(f"[ERROR] Failed to generate CSV: {e}")
 
     def _train_model(self) -> Path:
         """
@@ -91,7 +127,7 @@ class UCB_trainer:
 
     def _eval_model(self, run_directory, period="test"):
         """
-        Private method to evaluate an individual model after training. 
+        Private method to evaluate an individual model after training.
         """
         eval_run(run_dir=run_directory, period=period)
         return
@@ -105,10 +141,17 @@ class UCB_trainer:
             path = self._train_model()
             paths.append(path)
 
+<<<<<<< HEAD
         # for each path evaluate the model
         for p in paths:
             self._eval_model(run_directory=p, period=period)
             # self._eval_model(run_dir=p, period="validation")
+=======
+        #for each path evaluate the model
+        for p in paths:
+            self._eval_model(run_directory=p, period=period)
+            #self._eval_model(run_dir=p, period="validation")
+>>>>>>> 2151852148d55d61001d4db80eeedc63e6847227
 
         ensemble_run = create_results_ensemble(paths, period=period)
         return ensemble_run
@@ -118,6 +161,7 @@ class UCB_trainer:
         Private method to get and return predicted values and metrics after training and evaluation.
         """
         if self._num_ensemble_members == 1:
+            # Single model case
             with open(self._model / "test" / f"model_epoch{str(self._config.epochs).zfill(3)}" / "test_results.p", "rb") as fp:
                 results = pickle.load(fp)
                 self._test_observed = results['Tuler']['1D']['xr']['ReservoirInflowFLOW-OBSERVED_obs'].sel(
@@ -126,6 +170,7 @@ class UCB_trainer:
                     time_step=0)
 
         else:
+            # Ensemble case
             self._test_observed = self._model['Tuler']['1D']['xr']['ReservoirInflowFLOW-OBSERVED_obs']
             self._test_predictions = self._model['Tuler']['1D']['xr']['ReservoirInflowFLOW-OBSERVED_sim']
 
@@ -166,3 +211,59 @@ class UCB_trainer:
         ax.set_ylabel("ReservoirInflowFLOW-OBSERVED")
         ax.legend()
         plt.show()
+<<<<<<< HEAD
+=======
+
+    def _plot_day_of_year_average(self):
+        """
+        Private method to plot day-of-year averages of observed and predicted values.
+        """
+        if self._test_observed is None or self._test_predictions is None:
+            print("[ERROR] Observed or predicted values are None. Cannot generate plot.")
+            return
+
+        date_indexer = "date" if self._num_ensemble_members == 1 else "datetime"
+
+        observed_series = pd.Series(self._test_observed.values, index=self._test_observed[date_indexer].values)
+        predicted_series = pd.Series(self._test_predictions.values, index=self._test_predictions[date_indexer].values)
+        observed_doy_avg = observed_series.groupby(observed_series.index.dayofyear).mean()
+        predicted_doy_avg = predicted_series.groupby(predicted_series.index.dayofyear).mean()
+
+        fig, ax = plt.subplots(figsize=(16, 10))
+        ax.plot(observed_doy_avg.index, observed_doy_avg, label="Observed DOY Avg")
+        ax.plot(predicted_doy_avg.index, predicted_doy_avg, label="Predicted DOY Avg")
+        ax.set_xlabel("Day of Year")
+        ax.set_ylabel("Average Reservoir Inflow")
+        ax.legend()
+        plt.title("Day-of-Year Average Plot of Observed vs. Predicted")
+        plt.show()
+
+    def _plot_month_of_year_average(self):
+        """
+        Private method to plot month-of-year averages of observed and predicted values.
+        """
+        if self._test_observed is None or self._test_predictions is None:
+            print("[ERROR] Observed or predicted values are None. Cannot generate plot.")
+            return
+
+        date_indexer = "date" if self._num_ensemble_members == 1 else "datetime"
+
+        observed_series = pd.Series(self._test_observed.values, index=self._test_observed[date_indexer].values)
+        predicted_series = pd.Series(self._test_predictions.values, index=self._test_predictions[date_indexer].values)
+
+        observed_moy_avg = observed_series.groupby(observed_series.index.month).mean()
+        predicted_moy_avg = predicted_series.groupby(predicted_series.index.month).mean()
+
+        month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+        fig, ax = plt.subplots(figsize=(16, 10))
+        ax.plot(observed_moy_avg.index, observed_moy_avg, label="Observed MOY Avg")
+        ax.plot(predicted_moy_avg.index, predicted_moy_avg, label="Predicted MOY Avg")
+        ax.set_xlabel("Month")
+        ax.set_xticks(range(1, 13))
+        ax.set_xticklabels(month_names)
+        ax.set_ylabel("Average Reservoir Inflow")
+        ax.legend()
+        plt.title("Month-of-Year Average Plot of Observed vs. Predicted")
+        plt.show()
+>>>>>>> 2151852148d55d61001d4db80eeedc63e6847227
