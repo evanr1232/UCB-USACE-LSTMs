@@ -22,8 +22,8 @@ import pandas as pd
 from neuralhydrology.utils.config import Config
 from neuralhydrology.training.train import start_training
 from neuralhydrology.nh_run import eval_run
-# from neuralhydrology.utils.nh_results_ensemble import create_results_ensemble
-from neuralhydrology.utils.nh_results_ensemble_updated import create_results_ensemble
+from neuralhydrology.utils.nh_results_ensemble import create_results_ensemble
+# from neuralhydrology.utils.nh_results_ensemble_updated import create_results_ensemble
 from neuralhydrology.evaluation.metrics import calculate_all_metrics
 
 
@@ -59,12 +59,9 @@ class UCB_trainer:
             self._model = self._train_model()  # returns run directory of single model
             self._eval_model(self._model)
         else:
-<<<<<<< HEAD
             # returns dict with predictions on test set and metrics
             self.model = self._train_ensemble()
-=======
             self._model = self._train_ensemble() # returns dict with predictions on test set and metrics
->>>>>>> 2151852148d55d61001d4db80eeedc63e6847227
         return
 
     def results(self) -> dict:
@@ -72,12 +69,9 @@ class UCB_trainer:
         Public method to return metrics and plot data visualizations of model preformance.
         """
         self._get_predictions()
-<<<<<<< HEAD
         self._metrics = calculate_all_metrics(
             self._test_observed, self._test_predictions)
-=======
         self._metrics = calculate_all_metrics(self._test_observed, self._test_predictions)
->>>>>>> 2151852148d55d61001d4db80eeedc63e6847227
 
         self._generate_obs_sim_plt()
         self._generate_csv()
@@ -141,17 +135,14 @@ class UCB_trainer:
             path = self._train_model()
             paths.append(path)
 
-<<<<<<< HEAD
         # for each path evaluate the model
         for p in paths:
             self._eval_model(run_directory=p, period=period)
             # self._eval_model(run_dir=p, period="validation")
-=======
         #for each path evaluate the model
         for p in paths:
             self._eval_model(run_directory=p, period=period)
             #self._eval_model(run_dir=p, period="validation")
->>>>>>> 2151852148d55d61001d4db80eeedc63e6847227
 
         ensemble_run = create_results_ensemble(paths, period=period)
         return ensemble_run
@@ -211,8 +202,6 @@ class UCB_trainer:
         ax.set_ylabel("ReservoirInflowFLOW-OBSERVED")
         ax.legend()
         plt.show()
-<<<<<<< HEAD
-=======
 
     def _plot_day_of_year_average(self):
         """
@@ -266,4 +255,3 @@ class UCB_trainer:
         ax.legend()
         plt.title("Month-of-Year Average Plot of Observed vs. Predicted")
         plt.show()
->>>>>>> 2151852148d55d61001d4db80eeedc63e6847227
