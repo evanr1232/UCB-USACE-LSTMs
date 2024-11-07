@@ -28,7 +28,7 @@ from neuralhydrology.evaluation.metrics import calculate_all_metrics
 
 
 class UCB_trainer:
-    def __init__(self, path_to_csv_folder: Path, hyperparams: dict, num_ensemble_members: int = 1, physics_informed: bool = True, gpu: int = -1):
+    def __init__(self, path_to_csv_folder: Path, hyperparams: dict, input_features: list[str] = None, num_ensemble_members: int = 1, physics_informed: bool = True, gpu: int = -1):
         """
         Initializes the UCB_trainer object.
 
@@ -42,7 +42,8 @@ class UCB_trainer:
         self._physics_informed = physics_informed
         self._gpu = gpu
         self._data_dir = path_to_csv_folder
-
+        self._dynamic_inputs = input_features
+        
         self._config = None
         self._model = None
         self._test_predictions = None
@@ -175,10 +176,14 @@ class UCB_trainer:
 
         if 'save_weights_every' not in self._hyperparams:
             self._hyperparams['save_weights_every'] = self._hyperparams['epochs']
-
+        
+        if self._dynamic_inputs is not None: 
+            config.update_config({'dynamic_inputs': self._dynamic_inputs})
+        
         config.update_config(self._hyperparams)
         config.update_config({'data_dir': self._data_dir})
         config.update_config({'physics_informed': self._physics_informed})
+
         self._config = config
 
         if self._config.epochs % self._config.save_weights_every != 0:
