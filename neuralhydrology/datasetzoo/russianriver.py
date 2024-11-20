@@ -88,8 +88,14 @@ class RussianRiver(BaseDataset):
         return load_russian_river_attributes(self.cfg.data_dir)
 
 def load_russian_river_data(data_dir: Path) -> pd.DataFrame:
-    df = pd.read_csv(data_dir / 'test_data')
-    # make sure df is time-indexed (datetime)
+    df = pd.read_csv(data_dir / 'daily.csv')
+    df.columns = df.iloc[0]
+    df = df[3:]
+    df = df.drop("   Ordinate", axis=1)
+    df = df.rename(columns={'   Date': 'Day', '   Time': 'Time'})
+    df['Time'] = df['Time'].replace('24:00:00', '00:00:00')
+    df['date'] = pd.to_datetime(df['Day'], format='%d-%b-%y') + pd.to_timedelta(df['Time'])
+    df.set_index('date', inplace=True)
     return df
 
 def load_russian_river_attributes(data_dir: Path) -> pd.DataFrame:
