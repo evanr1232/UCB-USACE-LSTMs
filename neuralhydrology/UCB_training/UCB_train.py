@@ -18,6 +18,9 @@ from pathlib import Path
 import pickle
 import matplotlib.pyplot as plt
 import pandas as pd
+import subprocess
+import time
+import webbrowser
 
 from neuralhydrology.utils.config import Config
 from neuralhydrology.training.train import start_training
@@ -140,10 +143,10 @@ class UCB_trainer:
         for p in paths:
             self._eval_model(run_directory=p, period=period)
             # self._eval_model(run_dir=p, period="validation")
-        #for each path evaluate the model
-        for p in paths:
-            self._eval_model(run_directory=p, period=period)
-            #self._eval_model(run_dir=p, period="validation")
+        # #for each path evaluate the model
+        # for p in paths:
+        #     self._eval_model(run_directory=p, period=period)
+        #     #self._eval_model(run_dir=p, period="validation")
 
         ensemble_run = create_results_ensemble(paths, period=period)
         return ensemble_run
@@ -183,6 +186,7 @@ class UCB_trainer:
         config.update_config(self._hyperparams)
         config.update_config({'data_dir': self._data_dir})
         config.update_config({'physics_informed': self._physics_informed})
+        config.update_config({'log_tensorboard': True}) 
 
         self._config = config
 
@@ -260,3 +264,40 @@ class UCB_trainer:
         ax.legend()
         plt.title("Month-of-Year Average Plot of Observed vs. Predicted")
         plt.show()
+
+    def open_tensorboard(self, logdir: str, port: int = 6006):
+        """
+        Open TensorBoard and display logs.
+        
+        Args:
+            logdir (str): Path to the directory containing TensorBoard event files.
+            port (int): Port to host TensorBoard on (default: 6006).
+        """
+        logdir_path = Path(logdir)
+        
+        #check that the log directory exists
+        if not logdir_path.exists():
+            raise FileNotFoundError(f"Log directory {logdir} does not exist.")
+
+        #check if event files exist in the log directory
+        event_files = list(logdir_path.rglob("events.out.tfevents*"))
+        if not event_files:
+            raise FileNotFoundError(f"No TensorBoard event files found in log directory {logdir}.")
+
+        #TensorBoard command
+        tb_command = f"tensorboard --logdir={logdir} --port={port} --host=0.0.0.0"
+        
+        try:
+            #start TensorBoard as a subprocess
+            process = subprocess.Popen(tb_command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            time.sleep(5)  # Allow TensorBoard some time to start
+            
+            #open TensorBoard in the default web browser
+            url = f"http://localhost:{port}"
+            webbrowser.open(url)
+            print(f"TensorBoard started at {url} with logs from {logdir}")
+        
+        except Exception as e:
+            raise Exception(f"Failed to start TensorBoard: {e}")
+
+        return process
