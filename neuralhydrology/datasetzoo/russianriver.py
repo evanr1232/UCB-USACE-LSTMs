@@ -72,7 +72,16 @@ class RussianRiver(BaseDataset):
         pd.DataFrame
             Time-indexed DataFrame, containing the time series data (e.g., forcings + discharge).
         """
-        return load_russian_river_data(self.cfg.data_dir)
+        df = load_russian_river_data(self.cfg.data_dir) #daily df
+        if self.cfg.physics_informed:
+            physics_file = self.cfg.physics_data_file
+            if Path(physics_file).exists():
+                physics_df = load_hms_basin_data(physics_file)
+                df = pd.merge(physics_df, df,on = 'date' , how='inner')
+            else: raise FileNotFoundError(f"Physics data file not found: {physics_file}")
+
+        return df
+            
 
     def _load_attributes(self) -> pd.DataFrame:
         """Load dataset attributes
@@ -86,6 +95,16 @@ class RussianRiver(BaseDataset):
             Basin-indexed DataFrame, containing the attributes as columns.
         """
         return load_russian_river_attributes(self.cfg.data_dir)
+    
+def load_hms_basin_data(physics_data_file: Path):
+    df = pd.read_csv(physics_data_file)
+    df = df.drop([1, 2], axis=0).reset_index(drop=True)
+    df.columns = df.columns.str.strip()
+    df = df.rename(columns={'Date / Time': 'date'})
+    df['date'] = pd.to_datetime(df['date'], format='%d-%b-%y')
+    df.set_index('date', inplace=True)
+    return df
+
 
 def load_russian_river_data(data_dir: Path) -> pd.DataFrame:
     df = pd.read_csv(data_dir / 'daily.csv')

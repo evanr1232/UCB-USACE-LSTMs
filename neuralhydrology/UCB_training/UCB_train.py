@@ -8,7 +8,6 @@ purpose:
     - model preformance metrics + visualizations (currently no good graphs (percentiles for ensemble run, 
         comparing preformance with physical model), need to write code to get metrics)
 TODO:
-    - add logging
     - add support for turning on and off physics based inputs
     - add more visualizations
     - make default args better
@@ -31,7 +30,9 @@ from neuralhydrology.evaluation.metrics import calculate_all_metrics
 
 
 class UCB_trainer:
-    def __init__(self, path_to_csv_folder: Path, yaml_path: Path, hyperparams: dict, input_features: list[str] = None, num_ensemble_members: int = 1, physics_informed: bool = True, gpu: int = -1):
+    def __init__(self, path_to_csv_folder: Path, yaml_path: Path, hyperparams: dict, 
+                 input_features: list[str] = None, num_ensemble_members: int = 1, 
+                 physics_informed: bool = False, physics_data_file: Path = None, gpu: int = -1):
         """
         Initializes the UCB_trainer object.
 
@@ -43,6 +44,7 @@ class UCB_trainer:
         self._hyperparams = hyperparams
         self._num_ensemble_members = num_ensemble_members
         self._physics_informed = physics_informed
+        self._physics_data_file = physics_data_file
         self._gpu = gpu
         self._data_dir = path_to_csv_folder
         self._dynamic_inputs = input_features
@@ -229,7 +231,12 @@ class UCB_trainer:
         config.update_config(self._hyperparams)
         config.update_config({'data_dir': self._data_dir})
         config.update_config({'physics_informed': self._physics_informed})
-        config.update_config({'log_tensorboard': True}) 
+        if self._physics_informed:
+            if self._physics_data_file:
+                config.update_config({'physics_data_file': self._physics_data_file})
+            else:
+                raise ValueError("Physics-informed is enabled, but no physics data file was provided.")
+        #config.update_config({'log_tensorboard': True}) 
 
         self._config = config
 
@@ -265,8 +272,11 @@ class UCB_trainer:
 
         # Create the plot
         fig, ax = plt.subplots(figsize=(16, 10))
+        if self._physics_informed:
+            simulated_label = 'HybridSimulation'
+        else: simulated_label = 'Simulated'
         ax.plot(self._test_observed["date"], self._test_observed, label="Observed", linewidth=1.5)
-        ax.plot(self._test_predictions["date"], self._test_predictions, label="Simulated", linestyle='--', linewidth=1.5)
+        ax.plot(self._test_predictions["date"], self._test_predictions, label=simulated_label, linewidth=1.5)
 
         # Set dynamic labels and title using stored target variable and basin name
         ax.set_ylabel(f"{self._target_variable} (units)", fontsize=14)

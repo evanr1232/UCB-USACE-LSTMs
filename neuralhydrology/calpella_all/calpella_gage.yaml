@@ -20,7 +20,8 @@ test_end_date: "30/09/2009"
 # which GPU (id) to use [in format of cuda:0, cuda:1 etc, or cpu or None]
 device: cuda:0
 
-# physics_informed: false
+physics_informed: false
+physics_data_file: null
 
 # --- Validation configuration ---------------------------------------------------------------------
 
@@ -122,9 +123,7 @@ data_dir: "/Users/mia/research/russian_river_data_folder/"
 #   - nldas
 
 dynamic_inputs:
-  - EF RUSSIAN 10 ET-POTENTIAL RUN:BASIN AVERAGE 60 YR
   - EF RUSSIAN 20 ET-POTENTIAL RUN:BASIN AVERAGE 60 YR
-  - EF RUSSIAN 10 PRECIP-INC SCREENED
   - EF RUSSIAN 20 PRECIP-INC SCREENED
   - POTTER VALLEY CA FLOW USGS_ADJUSTED
   - UKIAH CA HUMIDITY USAF-NOAA
