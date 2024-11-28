@@ -4,17 +4,18 @@
 experiment_name: testing_run
 
 # files to specify training, validation and test basins (relative to code root or absolute path)
-train_basin_file: UCB_training/calpella
-validation_basin_file: UCB_training/calpella
-test_basin_file: UCB_training/calpella
+train_basin_file: calpella
+validation_basin_file: calpella
+test_basin_file: calpella
 
 # training, validation and test time periods (format = 'dd/mm/yyyy')
 train_start_date: "01/10/1994"
-train_end_date: "30/09/2005"
-validation_start_date: "01/10/2005"
-validation_end_date: "30/09/2009"
-# test_start_date: "01/10/2000"
-# test_end_date: "30/09/2005"
+train_end_date: "30/09/2002" 
+validation_start_date: "01/10/2002"
+validation_end_date: "30/09/2005"
+test_start_date: "01/10/2005"
+test_end_date: "30/09/2009"
+
 
 # which GPU (id) to use [in format of cuda:0, cuda:1 etc, or cpu or None]
 device: cuda:0
@@ -111,7 +112,7 @@ save_weights_every: 16
 dataset: russian_river
 
 # Path to data set root
-data_dir: "/Users/evanrobert/Documents/ESDL_Research/russian_river/russian_river_data_folder/"
+data_dir: "/Users/mia/research/russian_river_data_folder/"
 
 # Forcing product [daymet, maurer, maurer_extended, nldas, nldas_extended, nldas_hourly]
 # can be either a list of forcings or a single forcing product

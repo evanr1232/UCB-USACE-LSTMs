@@ -31,7 +31,7 @@ from neuralhydrology.evaluation.metrics import calculate_all_metrics
 
 
 class UCB_trainer:
-    def __init__(self, path_to_csv_folder: Path, hyperparams: dict, input_features: list[str] = None, num_ensemble_members: int = 1, physics_informed: bool = True, gpu: int = -1):
+    def __init__(self, path_to_csv_folder: Path, yaml_path: Path, hyperparams: dict, input_features: list[str] = None, num_ensemble_members: int = 1, physics_informed: bool = True, gpu: int = -1):
         """
         Initializes the UCB_trainer object.
 
@@ -46,12 +46,15 @@ class UCB_trainer:
         self._gpu = gpu
         self._data_dir = path_to_csv_folder
         self._dynamic_inputs = input_features
+        self._yaml_path = yaml_path
         
         self._config = None
         self._model = None
         self._test_predictions = None
         self._test_observed = None
         self._metrics = None
+        self._basin_name = None
+        self._target_variable = None
 
         self._create_config()
 
@@ -150,24 +153,58 @@ class UCB_trainer:
 
         ensemble_run = create_results_ensemble(paths, period=period)
         return ensemble_run
+    
+    #Hardcoded for Tuler
+    # def _get_predictions(self) -> dict:
+    #     """
+    #     Private method to get and return predicted values and metrics after training and evaluation.
+    #     """
+    #     if self._num_ensemble_members == 1:
+    #         # Single model case
+    #         with open(self._model / "test" / f"model_epoch{str(self._config.epochs).zfill(3)}" / "test_results.p", "rb") as fp:
+    #             results = pickle.load(fp)
+    #             self._test_observed = results['Tuler']['1D']['xr']['ReservoirInflowFLOW-OBSERVED_obs'].sel(
+    #                 time_step=0)
+    #             self._test_predictions = results['Tuler']['1D']['xr']['ReservoirInflowFLOW-OBSERVED_sim'].sel(
+    #                 time_step=0)
 
+    #     else:
+    #         # Ensemble case
+    #         self._test_observed = self._model['Tuler']['1D']['xr']['ReservoirInflowFLOW-OBSERVED_obs']
+    #         self._test_predictions = self._model['Tuler']['1D']['xr']['ReservoirInflowFLOW-OBSERVED_sim']
+
+    #     return
     def _get_predictions(self) -> dict:
         """
         Private method to get and return predicted values and metrics after training and evaluation.
+        For the single ensemble case only.
         """
         if self._num_ensemble_members == 1:
             # Single model case
             with open(self._model / "test" / f"model_epoch{str(self._config.epochs).zfill(3)}" / "test_results.p", "rb") as fp:
                 results = pickle.load(fp)
-                self._test_observed = results['Tuler']['1D']['xr']['ReservoirInflowFLOW-OBSERVED_obs'].sel(
-                    time_step=0)
-                self._test_predictions = results['Tuler']['1D']['xr']['ReservoirInflowFLOW-OBSERVED_sim'].sel(
-                    time_step=0)
 
-        else:
-            # Ensemble case
-            self._test_observed = self._model['Tuler']['1D']['xr']['ReservoirInflowFLOW-OBSERVED_obs']
-            self._test_predictions = self._model['Tuler']['1D']['xr']['ReservoirInflowFLOW-OBSERVED_sim']
+            # Dynamically get the basin name
+            self._basin_name = next(iter(results.keys()))  # Get the first basin key dynamically
+            print(f"Using basin: {self._basin_name}")
+
+            # Retrieve the target variable from the config
+            self._target_variable = self._config.target_variables[0]  # Assuming single target variable for now
+            print(f"Using target variable: {self._target_variable}")
+
+            # Construct keys for observed and simulated data
+            observed_key = f"{self._target_variable}_obs"
+            simulated_key = f"{self._target_variable}_sim"
+
+            # Check if keys exist
+            if observed_key not in results[self._basin_name]['1D']['xr']:
+                raise KeyError(f"Observed key '{observed_key}' not found in results for basin {self._basin_name}.")
+            if simulated_key not in results[self._basin_name]['1D']['xr']:
+                raise KeyError(f"Simulated key '{simulated_key}' not found in results for basin {self._basin_name}.")
+
+            # Extract observed and simulated data
+            self._test_observed = results[self._basin_name]['1D']['xr'][observed_key].sel(time_step=0)
+            self._test_predictions = results[self._basin_name]['1D']['xr'][simulated_key].sel(time_step=0)
 
         return
 
@@ -175,7 +212,13 @@ class UCB_trainer:
         """
         Private method to create Configuration object for training from user specifications.
         """
-        config = Config(Path('./template_config.yaml'))
+        if not self._yaml_path.exists():
+            raise FileNotFoundError(f"YAML configuration file not found: {self._yaml_path}")
+
+        # Load the base configuration from the provided YAML file
+        config = Config(self._yaml_path)
+
+        # config = Config(Path('./template_config.yaml'))
 
         if 'save_weights_every' not in self._hyperparams:
             self._hyperparams['save_weights_every'] = self._hyperparams['epochs']
@@ -198,18 +241,47 @@ class UCB_trainer:
 
         return
 
+    # def _generate_obs_sim_plt(self):
+    #     """
+    #     Private method to plot observed and simulated values over time.
+    #     """
+    #     date_indexer = "date" if self._num_ensemble_members == 1 else "datetime"
+    #     fig, ax = plt.subplots(figsize=(16, 10))
+    #     ax.plot(self._test_observed[date_indexer],
+    #             self._test_observed, label="Obs")
+    #     ax.plot(self._test_predictions[date_indexer],
+    #             self._test_predictions, label="Sim")
+    #     ax.set_ylabel("ReservoirInflowFLOW-OBSERVED")
+    #     ax.legend()
+    #     plt.show()
+
     def _generate_obs_sim_plt(self):
         """
-        Private method to plot observed and simulated values over time.
+        Private method to plot observed and simulated values over time with improved aesthetics and dynamic labels.
         """
-        date_indexer = "date" if self._num_ensemble_members == 1 else "datetime"
+        if self._test_observed is None or self._test_predictions is None:
+            print("[ERROR] Observed or predicted values are None. Cannot generate plot.")
+            return
+
+        # Create the plot
         fig, ax = plt.subplots(figsize=(16, 10))
-        ax.plot(self._test_observed[date_indexer],
-                self._test_observed, label="Obs")
-        ax.plot(self._test_predictions[date_indexer],
-                self._test_predictions, label="Sim")
-        ax.set_ylabel("ReservoirInflowFLOW-OBSERVED")
-        ax.legend()
+        ax.plot(self._test_observed["date"], self._test_observed, label="Observed", linewidth=1.5)
+        ax.plot(self._test_predictions["date"], self._test_predictions, label="Simulated", linestyle='--', linewidth=1.5)
+
+        # Set dynamic labels and title using stored target variable and basin name
+        ax.set_ylabel(f"{self._target_variable} (units)", fontsize=14)
+        ax.set_xlabel("Date", fontsize=14)
+        ax.set_title(f"{self._basin_name} - {self._target_variable} Over Time", fontsize=16)
+
+        # Add legend and grid
+        ax.legend(fontsize=12)
+        ax.grid(True, linestyle="--", alpha=0.7)
+
+        # Improve date formatting
+        fig.autofmt_xdate()
+
+        # Final adjustments and show
+        plt.tight_layout()
         plt.show()
 
     def _plot_day_of_year_average(self):
