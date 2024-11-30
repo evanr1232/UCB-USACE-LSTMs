@@ -40,6 +40,7 @@ class UCB_trainer:
             hyperparams (dict): A dictionary of hyperparameters for the model.
             num_ensemble_members (int): The number of ensemble members.
             physics_informed (bool): Whether to use internal states of physical model as features.
+            physics_data_file (path): File where HMS data is stored.
         """
         self._hyperparams = hyperparams
         self._num_ensemble_members = num_ensemble_members
@@ -144,14 +145,9 @@ class UCB_trainer:
             path = self._train_model()
             paths.append(path)
 
-        # for each path evaluate the model
+        # for each path evaluate the model --> can add functionality to report training and validation
         for p in paths:
             self._eval_model(run_directory=p, period=period)
-            # self._eval_model(run_dir=p, period="validation")
-        # #for each path evaluate the model
-        # for p in paths:
-        #     self._eval_model(run_directory=p, period=period)
-        #     #self._eval_model(run_dir=p, period="validation")
 
         ensemble_run = create_results_ensemble(paths, period=period)
         return ensemble_run
@@ -179,7 +175,7 @@ class UCB_trainer:
     def _get_predictions(self) -> dict:
         """
         Private method to get and return predicted values and metrics after training and evaluation.
-        For the single ensemble case only.
+        For the single ensemble case only. --> Need to implement ensemble case still
         """
         if self._num_ensemble_members == 1:
             # Single model case
@@ -264,13 +260,10 @@ class UCB_trainer:
 
     def _generate_obs_sim_plt(self):
         """
+        #needs to be cleaned up
         Private method to plot observed and simulated values over time with improved aesthetics and dynamic labels.
         """
-        if self._test_observed is None or self._test_predictions is None:
-            print("[ERROR] Observed or predicted values are None. Cannot generate plot.")
-            return
-
-        # Create the plot
+        #setup plot
         fig, ax = plt.subplots(figsize=(16, 10))
         if self._physics_informed:
             simulated_label = 'HybridSimulation'
@@ -278,19 +271,16 @@ class UCB_trainer:
         ax.plot(self._test_observed["date"], self._test_observed, label="Observed", linewidth=1.5)
         ax.plot(self._test_predictions["date"], self._test_predictions, label=simulated_label, linewidth=1.5)
 
-        # Set dynamic labels and title using stored target variable and basin name
+        #dynamic labels and title using stored target variable and basin name
         ax.set_ylabel(f"{self._target_variable} (units)", fontsize=14)
         ax.set_xlabel("Date", fontsize=14)
-        ax.set_title(f"{self._basin_name} - {self._target_variable} Over Time", fontsize=16)
+        ax.set_title(f"{self._basin_name} - {self._target_variable} Over Time", fontsize=16) #change this
 
-        # Add legend and grid
         ax.legend(fontsize=12)
         ax.grid(True, linestyle="--", alpha=0.7)
+        
+        fig.autofmt_xdate() #date formatting
 
-        # Improve date formatting
-        fig.autofmt_xdate()
-
-        # Final adjustments and show
         plt.tight_layout()
         plt.show()
 
@@ -349,7 +339,7 @@ class UCB_trainer:
 
     def open_tensorboard(self, logdir: str, port: int = 6006):
         """
-        Open TensorBoard and display logs.
+        Opens TensorBoard and display logs.
         
         Args:
             logdir (str): Path to the directory containing TensorBoard event files.
@@ -365,15 +355,12 @@ class UCB_trainer:
         event_files = list(logdir_path.rglob("events.out.tfevents*"))
         if not event_files:
             raise FileNotFoundError(f"No TensorBoard event files found in log directory {logdir}.")
-
-        #TensorBoard command
-        tb_command = f"tensorboard --logdir={logdir} --port={port} --host=0.0.0.0"
         
+        tb_command = f"tensorboard --logdir={logdir} --port={port} --host=0.0.0.0" #TensorBoard command       
         try:
             #start TensorBoard as a subprocess
             process = subprocess.Popen(tb_command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            time.sleep(5)  # Allow TensorBoard some time to start
-            
+            time.sleep(5)
             #open TensorBoard in the default web browser
             url = f"http://localhost:{port}"
             webbrowser.open(url)

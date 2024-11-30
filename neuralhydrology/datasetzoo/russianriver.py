@@ -77,7 +77,7 @@ class RussianRiver(BaseDataset):
             physics_file = self.cfg.physics_data_file
             if Path(physics_file).exists():
                 physics_df = load_hms_basin_data(physics_file)
-                df = pd.merge(physics_df, df,on = 'date' , how='inner')
+                df = pd.merge(df, physics_df, left_index=True, right_index=True, how='outer') #add physics columns if physics informed
             else: raise FileNotFoundError(f"Physics data file not found: {physics_file}")
 
         return df
@@ -98,20 +98,21 @@ class RussianRiver(BaseDataset):
     
 def load_hms_basin_data(physics_data_file: Path):
     df = pd.read_csv(physics_data_file)
-    df = df.drop([1, 2], axis=0).reset_index(drop=True)
+    df = df[3:] #switch to 2 for calpella
     df.columns = df.columns.str.strip()
+    df = df.drop(columns=['Ordinate'])
     df = df.rename(columns={'Date / Time': 'date'})
     df['date'] = pd.to_datetime(df['date'], format='%d-%b-%y')
     df.set_index('date', inplace=True)
     return df
 
-
 def load_russian_river_data(data_dir: Path) -> pd.DataFrame:
     df = pd.read_csv(data_dir / 'daily.csv')
     df.columns = df.iloc[0]
     df = df[3:]
-    df = df.drop("   Ordinate", axis=1)
-    df = df.rename(columns={'   Date': 'Day', '   Time': 'Time'})
+    df.columns = df.columns.str.strip()
+    df = df.drop(columns=['Ordinate'])
+    df = df.rename(columns={'Date': 'Day', '   Time': 'Time'})
     df['Time'] = df['Time'].replace('24:00:00', '00:00:00')
     df['date'] = pd.to_datetime(df['Day'], format='%d-%b-%y') + pd.to_timedelta(df['Time'])
     df.set_index('date', inplace=True)
