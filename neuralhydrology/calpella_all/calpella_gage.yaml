@@ -139,5 +139,5 @@ target_variables:
   - NR CALPELLA FLOW COE CPL
 
 # clip negative predictions to zero for all variables listed below. Should be a list, even for single variables.
-# clip_targets_to_zero:
-#   - QObs(mm/d)
+clip_targets_to_zero:
+  - NR CALPELLA FLOW COE CPL

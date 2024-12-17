@@ -204,6 +204,13 @@ class UCB_trainer:
             self._test_observed = results[self._basin_name]['1D']['xr'][observed_key].sel(time_step=0)
             self._test_predictions = results[self._basin_name]['1D']['xr'][simulated_key].sel(time_step=0)
 
+#        else:
+#            with open(self._model / "test" / f"model_epoch{str(self._config.epochs).zfill(3)}" / "test_results.p", "rb") as fp: 
+#                results = pickle.load(fp)
+#           self._basin_name = next(iter(results.keys()))
+#            self._basin_name = "Tuler"
+#            self._test_observed = self._model[self._basin_name]['1D']['xr']['ReservoirInflowFLOW-OBSERVED_obs']
+#            self._test_predictions = self._model[self._basin_name]['1D']['xr']['ReservoirInflowFLOW-OBSERVED_sim']
         return
 
     def _create_config(self) -> Config:
