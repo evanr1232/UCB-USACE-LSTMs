@@ -61,20 +61,20 @@ class UCB_trainer:
 
         self._create_config()
 
-    def train(self,  period='test'):
+    def train(self):
         """
         Public method to handle the training and evaluating process for individual models or ensembles. Sets self.model.
         """
         if self._num_ensemble_members == 1:
             self._model = self._train_model()  # returns run directory of single model
-            self._eval_model(self._model, period)
+            self._eval_model(self._model)
         else:
             # returns dict with predictions on test set and metrics
             self.model = self._train_ensemble()
             self._model = self._train_ensemble() # returns dict with predictions on test set and metrics
         return
 
-    def results(self, period='test') -> dict:
+    def results(self, period='validation') -> dict:
         """
         Public method to return metrics and plot data visualizations of model preformance.
         """
@@ -87,7 +87,7 @@ class UCB_trainer:
         self._generate_csv(period)
         return self._metrics
 
-    def _generate_csv(self, period='test'):
+    def _generate_csv(self, period='validation'):
         """
         Private method to generate a CSV file of observed and predicted values. Used in the .results() function.
         :return:
@@ -129,7 +129,7 @@ class UCB_trainer:
         path = self._config.run_dir
         return path
 
-    def _eval_model(self, run_directory, period="test"):
+    def _eval_model(self, run_directory, period="validation"):
         """
         Private method to evaluate an individual model after training.
         """
@@ -137,7 +137,7 @@ class UCB_trainer:
 
         return
 
-    def _train_ensemble(self, period="test") -> dict:
+    def _train_ensemble(self, period="validation") -> dict:
         """
         Private method to train and evaluate an ensemble of models.
         """
@@ -173,15 +173,24 @@ class UCB_trainer:
     #         self._test_predictions = self._model['Tuler']['1D']['xr']['ReservoirInflowFLOW-OBSERVED_sim']
 
     #     return
-    def _get_predictions(self, period='test') -> dict:
+    def _get_predictions(self, period='validation') -> dict:
         """
         Private method to get and return predicted values and metrics after training and evaluation.
         For the single ensemble case only. --> Need to implement ensemble case still
         """
         if self._num_ensemble_members == 1:
-            # Single model case
-            with open(self._model / period / f"model_epoch{str(self._config.epochs).zfill(3)}" / f"{period}_results.p", "rb") as fp:
-                results = pickle.load(fp)
+            results_file = self._model / period / f"model_epoch{str(self._config.epochs).zfill(3)}" / f"{period}_results.p"
+
+        # If the results file does not exist, dynamically evaluate
+        if not results_file.exists():
+            self._eval_model(self._model, period)
+
+        # Load results from file
+        if not results_file.exists():
+            raise FileNotFoundError(f"Failed to evaluate or locate results for {period}. Expected file at: {results_file}")
+
+        with open(results_file, "rb") as fp:
+            results = pickle.load(fp)
 
             # Dynamically get the basin name
             self._basin_name = next(iter(results.keys()))  # Get the first basin key dynamically
@@ -266,7 +275,7 @@ class UCB_trainer:
     #     ax.legend()
     #     plt.show()
 
-    def _generate_obs_sim_plt(self, period='test'):
+    def _generate_obs_sim_plt(self, period='validation'):
         """
         #needs to be cleaned up
         Private method to plot observed and simulated values over time with improved aesthetics and dynamic labels.
