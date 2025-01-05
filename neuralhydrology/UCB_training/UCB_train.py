@@ -32,7 +32,7 @@ from neuralhydrology.evaluation.metrics import calculate_all_metrics
 class UCB_trainer:
     def __init__(self, path_to_csv_folder: Path, yaml_path: Path, hyperparams: dict, 
                  input_features: list[str] = None, num_ensemble_members: int = 1, 
-                 physics_informed: bool = False, physics_data_file: Path = None, gpu: int = -1):
+                 physics_informed: bool = False, physics_data_file: Path = None, hourly: bool=False, extend_train_period: bool=False, gpu: int = -1):
         """
         Initializes the UCB_trainer object.
 
@@ -50,6 +50,8 @@ class UCB_trainer:
         self._data_dir = path_to_csv_folder
         self._dynamic_inputs = input_features
         self._yaml_path = yaml_path
+        self._hourly = hourly
+        self._extended_train_period = extend_train_period
         
         self._config = None
         self._model = None
@@ -240,16 +242,21 @@ class UCB_trainer:
         
         if self._dynamic_inputs is not None: 
             config.update_config({'dynamic_inputs': self._dynamic_inputs})
-        
+
+        #if trainer is initialized with extend_train_period = true : the train period gets extended to include the validation period
+        #NOTE: might be good to also adjust validation and test periods as well?
+        if self._extended_train_period:
+            config.update_config({'train_end_date': config.validation_end_date})
+
         config.update_config(self._hyperparams)
         config.update_config({'data_dir': self._data_dir})
         config.update_config({'physics_informed': self._physics_informed})
+        config.update_config({'hourly': self._hourly})
         if self._physics_informed:
             if self._physics_data_file:
                 config.update_config({'physics_data_file': self._physics_data_file})
             else:
                 raise ValueError("Physics-informed is enabled, but no physics data file was provided.")
-        #config.update_config({'log_tensorboard': True}) 
 
         self._config = config
 

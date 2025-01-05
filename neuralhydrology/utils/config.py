@@ -270,6 +270,11 @@ class Config(object):
     #UCB
     def physics_data_file(self) -> Path:
         return self._cfg.get("physics_data_file", None)
+    
+    @property
+    #UCB
+    def hourly(self) -> bool:
+        return self._cfg.get("hourly", None)
 
     @property
     def additional_feature_files(self) -> List[Path]:

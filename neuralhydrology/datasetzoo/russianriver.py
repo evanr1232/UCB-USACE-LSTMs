@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 import xarray
+import logging
 
 from neuralhydrology.datasetzoo.basedataset import BaseDataset
 from neuralhydrology.utils.config import Config
@@ -72,11 +73,11 @@ class RussianRiver(BaseDataset):
         pd.DataFrame
             Time-indexed DataFrame, containing the time series data (e.g., forcings + discharge).
         """
-        df = load_russian_river_data(self.cfg.data_dir) #daily df
+        df = load_russian_river_data(self.cfg.data_dir, self.cfg.hourly) #daily or hourly df
         if self.cfg.physics_informed:
             physics_file = self.cfg.physics_data_file
             if Path(physics_file).exists():
-                physics_df = load_hms_basin_data(physics_file)
+                physics_df = load_hms_basin_data(physics_file, self.cfg.hourly)
                 df = pd.merge(df, physics_df, left_index=True, right_index=True, how='outer') #add physics columns if physics informed
             else: raise FileNotFoundError(f"Physics data file not found: {physics_file}")
 
@@ -96,23 +97,35 @@ class RussianRiver(BaseDataset):
         """
         return load_russian_river_attributes(self.cfg.data_dir)
     
-def load_hms_basin_data(physics_data_file: Path):
-    df = pd.read_csv(physics_data_file)
-    df = df[3:] #switch to 2 for calpella
-    df.columns = df.columns.str.strip()
-    df = df.drop(columns=['Ordinate'])
-    df = df.rename(columns={'Date / Time': 'date'})
-    df['date'] = pd.to_datetime(df['date'], format='%d-%b-%y')
-    df.set_index('date', inplace=True)
-    return df
-
-def load_russian_river_data(data_dir: Path) -> pd.DataFrame:
-    df = pd.read_csv(data_dir / 'daily.csv')
+def load_hms_basin_data(physics_data_file: Path, hourly: bool) -> pd.DataFrame:
+    logging.info(f"Loading data from file: {physics_data_file}, hourly: {hourly}")
+    df = pd.read_csv(physics_data_file, low_memory=False)
     df.columns = df.iloc[0]
     df = df[3:]
     df.columns = df.columns.str.strip()
     df = df.drop(columns=['Ordinate'])
-    df = df.rename(columns={'Date': 'Day', '   Time': 'Time'})
+    df = df.rename(columns={'Date': 'Day', 'Time': 'Time'})
+    if hourly:
+        df['Time'] = df['Time'] + ":00"
+    df['Time'] = df['Time'].replace('24:00:00', '00:00:00')
+    df['date'] = pd.to_datetime(df['Day'], format='%d-%b-%y') + pd.to_timedelta(df['Time'])
+    df.set_index('date', inplace=True)
+    return df
+
+def load_russian_river_data(data_dir: Path, hourly: bool) -> pd.DataFrame:  
+    if hourly:
+        file_path = data_dir / 'hourly.csv'
+    else:
+        file_path = data_dir / 'daily.csv'
+    df = pd.read_csv(file_path, low_memory=False)
+    
+    df.columns = df.iloc[0]
+    df = df[3:]
+    df.columns = df.columns.str.strip()
+    df = df.drop(columns=['Ordinate'])
+    df = df.rename(columns={'Date': 'Day', 'Time': 'Time'})
+    if hourly:
+        df['Time'] = df['Time'] + ":00"
     df['Time'] = df['Time'].replace('24:00:00', '00:00:00')
     df['date'] = pd.to_datetime(df['Day'], format='%d-%b-%y') + pd.to_timedelta(df['Time'])
     df.set_index('date', inplace=True)
