@@ -105,8 +105,8 @@ def load_hms_basin_data(physics_data_file: Path, hourly: bool) -> pd.DataFrame:
     df.columns = df.columns.str.strip()
     df = df.drop(columns=['Ordinate'])
     df = df.rename(columns={'Date': 'Day', 'Time': 'Time'})
-    if hourly:
-        df['Time'] = df['Time'] + ":00"
+    #if hourly:
+    #    df['Time'] = df['Time'] + ":00"
     df['Time'] = df['Time'].replace('24:00:00', '00:00:00')
     df['date'] = pd.to_datetime(df['Day'], format='%d-%b-%y') + pd.to_timedelta(df['Time'])
     df.set_index('date', inplace=True)
@@ -124,8 +124,8 @@ def load_russian_river_data(data_dir: Path, hourly: bool) -> pd.DataFrame:
     df.columns = df.columns.str.strip()
     df = df.drop(columns=['Ordinate'])
     df = df.rename(columns={'Date': 'Day', 'Time': 'Time'})
-    if hourly:
-        df['Time'] = df['Time'] + ":00"
+    #if hourly:
+    #    df['Time'] = df['Time'] + ":00"
     df['Time'] = df['Time'].replace('24:00:00', '00:00:00')
     df['date'] = pd.to_datetime(df['Day'], format='%d-%b-%y') + pd.to_timedelta(df['Time'])
     df.set_index('date', inplace=True)

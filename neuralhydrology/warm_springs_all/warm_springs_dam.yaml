@@ -113,7 +113,7 @@ save_weights_every: 16
 dataset: russian_river
 
 # Path to data set root
-data_dir: "/Users/mia/research/updated_russian_river_data_folder/"
+data_dir: "F:/Dino/UCB-USACE-LSTMs/data/updated_russian_river_folder/"
 
 # Forcing product [daymet, maurer, maurer_extended, nldas, nldas_extended, nldas_hourly]
 # can be either a list of forcings or a single forcing product
