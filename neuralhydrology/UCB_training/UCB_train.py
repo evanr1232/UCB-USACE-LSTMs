@@ -205,6 +205,8 @@ class UCB_trainer:
             # Construct keys for observed and simulated data
             observed_key = f"{self._target_variable}_obs"
             simulated_key = f"{self._target_variable}_sim"
+            print("Observed_key: " + observed_key)
+            print("Simulated_key: " + simulated_key)
 
             # Check if keys exist
             if observed_key not in results[self._basin_name]['1D']['xr']:
