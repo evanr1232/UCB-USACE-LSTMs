@@ -109,6 +109,7 @@ def load_hms_basin_data(physics_data_file: Path, hourly: bool) -> pd.DataFrame:
     #    df['Time'] = df['Time'] + ":00"
     df['Time'] = df['Time'].replace('24:00:00', '00:00:00')
     df['date'] = pd.to_datetime(df['Day'], format='%d-%b-%y') + pd.to_timedelta(df['Time'])
+    df.dropna(subset=['date'], inplace=True)
     df.set_index('date', inplace=True)
     return df
 
@@ -128,6 +129,7 @@ def load_russian_river_data(data_dir: Path, hourly: bool) -> pd.DataFrame:
     #    df['Time'] = df['Time'] + ":00"
     df['Time'] = df['Time'].replace('24:00:00', '00:00:00')
     df['date'] = pd.to_datetime(df['Day'], format='%d-%b-%y') + pd.to_timedelta(df['Time'])
+    df.dropna(subset=['date'], inplace=True)
     df.set_index('date', inplace=True)
     return df
 
