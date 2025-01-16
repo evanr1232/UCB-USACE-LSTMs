@@ -20,6 +20,7 @@ import pandas as pd
 import subprocess
 import time
 import webbrowser
+import xarray as xr
 
 from neuralhydrology.utils.config import Config
 from neuralhydrology.training.train import start_training
@@ -74,7 +75,7 @@ class UCB_trainer:
             # returns dict with predictions on test set and metrics
             self.model = self._train_ensemble()
             self._model = self._train_ensemble() # returns dict with predictions on test set and metrics
-        return
+        return self._model # return model directory
 
     def results(self, period='validation') -> dict:
         """
@@ -86,8 +87,8 @@ class UCB_trainer:
         self._metrics = calculate_all_metrics(self._observed, self._predictions)
 
         self._generate_obs_sim_plt(period)
-        self._generate_csv(period)
-        return self._metrics
+        output_path = self._generate_csv(period)
+        return self._metrics, output_path
 
     def _generate_csv(self, period='validation'):
         """
@@ -115,6 +116,8 @@ class UCB_trainer:
             print(f"[INFO] CSV output saved at: {output_path}")
         except Exception as e:
             print(f"[ERROR] Failed to generate CSV: {e}")
+
+        return output_path
 
     def _train_model(self) -> Path:
         """
@@ -396,3 +399,125 @@ class UCB_trainer:
             raise Exception(f"Failed to start TensorBoard: {e}")
 
         return process
+
+def clean_daily(df):
+    df.columns = df.iloc[0]
+    df = df[3:]
+    df.columns = df.columns.str.strip()
+    df = df.drop(columns=['Ordinate'])
+    df = df.rename(columns={'Date': 'Day', 'Time': 'Time'})
+    df['Time'] = df['Time'].replace('24:00:00', '00:00:00')
+    df['date'] = pd.to_datetime(df['Day'], format='%d-%b-%y') + pd.to_timedelta(df['Time'])
+    df.dropna(subset=['date'], inplace=True)
+    df.set_index('date', inplace=True)
+    return df
+
+def clean_hourly(df):
+    df.columns = df.iloc[0]
+    df = df[3:]
+    df.columns = df.columns.str.strip()
+    df = df.drop(columns=['Ordinate'])
+    df = df.rename(columns={'Date': 'Day', 'Time': 'Time'})
+    #df['Time'] = df['Time'] + ":00"
+    df['Time'] = df['Time'].replace('24:00:00', '00:00:00')
+    df['date'] = pd.to_datetime(df['Day'], format='%d-%b-%y') + pd.to_timedelta(df['Time'])
+    df.dropna(subset=['date'], inplace=True)
+    df.set_index('date', inplace=True)
+    return df
+
+def combinedPlot(lstm_results: Path, lstmPhysics_results: Path, HMS_results: Path, title: str, 
+                 test_start_date="2005-10-01", test_end_date="2009-09-30", fName = "metrics.csv"):
+    model1_df = pd.read_csv(lstm_results) #colums: Date, Observed, Predicted
+    model2_df = pd.read_csv(lstmPhysics_results) #colums: Date, Observed, Predicted
+    model1_df = model1_df.rename(columns={
+        'Date': 'date',
+        'Observed': 'Observed_Model1',
+        'Predicted': 'Predicted_Model1'
+    })
+    model1_df['date'] = pd.to_datetime(model1_df['date'])
+
+    # Set all negative values in the Predicted_Model1 column to zero
+    model1_df.loc[model1_df['Predicted_Model1'] < 0, 'Predicted_Model1'] = 0
+
+    model2_df = model2_df.rename(columns={
+        'Date': 'date',
+        'Observed': 'Observed_Model2',
+        'Predicted': 'Predicted_Model2'
+    })
+    model2_df['date'] = pd.to_datetime(model2_df['date'])
+
+    # Set all negative values in the Predicted_Model2 column to zero
+    model2_df.loc[model2_df['Predicted_Model2'] < 0, 'Predicted_Model2'] = 0
+    
+    #This just gets the HMS prediceted values from the physics csv
+    hms_df = clean_daily(pd.read_csv(HMS_results))
+    #hms_df = hms_df[3:]
+    hms_df.columns = hms_df.columns.str.strip()
+    #hms_df = hms_df.drop(columns=['Ordinate'])
+    #hms_df = hms_df.drop(columns=['Col number'])
+    #hms_df = hms_df.rename(columns={'Date / Time': 'date'})
+    hms_df['Day'] = pd.to_datetime(hms_df['Day'], format='%d-%b-%y')
+    hms_df = hms_df.rename(columns={'Day': 'date'})
+    hms_df = hms_df.reset_index(drop=True)
+#    print(hms_df.head())
+    hms_df = hms_df.iloc[:, [0,2]] #Date, HMS predicted
+#    print(hms_df.head())
+    hms_df = hms_df.rename(columns={hms_df.columns[1]: "HMS_predicted"})
+    hms_df["HMS_predicted"] = pd.to_numeric(hms_df["HMS_predicted"], errors="coerce")
+    
+#    print(model1_df.head())
+#    print(model2_df.head())
+#    print(hms_df.head())
+
+    df = model1_df.merge(model2_df, how='right', on='date').merge(hms_df, how='right', on='date')
+#    print(df.head())
+
+    # Filter for the test period
+    test_start_date = pd.to_datetime(test_start_date)
+    test_end_date = pd.to_datetime(test_end_date)
+    df = df[(df['date'] >= test_start_date) & (df['date'] <= test_end_date)]
+    print(df.head())
+
+    # Convert pandas Series to xarray DataArray with a datetime coordinate
+    obs_da = xr.DataArray(df['Observed_Model1'].values, dims=["date"], coords={"date": df['date']})
+    sim_da_hms = xr.DataArray(df['HMS_predicted'].values, dims=["date"], coords={"date": df['date']})
+    sim_da_lstm = xr.DataArray(df['Predicted_Model1'].values, dims=["date"], coords={"date": df['date']})
+    sim_da_physics = xr.DataArray(df['Predicted_Model2'].values, dims=["date"], coords={"date": df['date']})
+
+    # Collect metrics into a dictionary
+    metrics = {
+        "HMS": calculate_all_metrics(obs_da, sim_da_hms),
+        "LSTM": calculate_all_metrics(obs_da, sim_da_lstm),
+        "Physics_Informed_LSTM": calculate_all_metrics(obs_da, sim_da_physics),
+    }
+
+    metrics_df = pd.DataFrame(metrics)
+    output_csv_path = fName
+    metrics_df.to_csv(output_csv_path)
+
+    # Plot all columns against the "date_col" (x-axis)
+    plt.figure(figsize=(30, 10))
+    
+    plt.plot(df["date"], df["Observed_Model1"], label='Observed', linewidth=2)
+    plt.plot(df["date"], df["HMS_predicted"], label='HMS Prediction',  linewidth=2, alpha=0.7)
+    plt.plot(df["date"], df["Predicted_Model1"], label='LSTM Prediction', linewidth=2, alpha=0.8)
+    plt.plot(df["date"], df["Predicted_Model2"], label='Physics Informed LSTM Prediction', linewidth=2, alpha=0.7)
+    
+    # Customize the plot
+    plt.tick_params(axis='x', labelsize=15)  # For x-axis tick labels
+    plt.tick_params(axis='y', labelsize=15) 
+    plt.xlabel("Date", fontsize=20)
+    plt.ylabel("Inflow (cubic feet per second)", fontsize=20)
+    plt.title(title, fontsize=30)
+    plt.legend(fontsize=25, loc="upper right")
+    plt.grid(True, alpha=0.4)
+
+    plt.xlim(test_start_date, test_end_date)
+
+    #plt.gcf.autofmt_xdate()
+    plt.tight_layout()
+    plt.show()
+
+    #print(metrics)
+
+    return plt, metrics_df
