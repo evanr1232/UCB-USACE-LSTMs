@@ -5,8 +5,12 @@ import pandas as pd
 import xarray
 import logging
 
+import matplotlib.pyplot as plt
+
 from neuralhydrology.datasetzoo.basedataset import BaseDataset
 from neuralhydrology.utils.config import Config
+#from neuralhydrology.UCB_training.UCB_train import clean_daily
+#from neuralhydrology.UCB_training.UCB_train import clean_hourly
 
 
 class RussianRiver(BaseDataset):
@@ -98,6 +102,7 @@ class RussianRiver(BaseDataset):
         return load_russian_river_attributes(self.cfg.data_dir)
     
 def load_hms_basin_data(physics_data_file: Path, hourly: bool) -> pd.DataFrame:
+    # CHANGE TO USE clean_daily and clean_hourly
     logging.info(f"Loading data from file: {physics_data_file}, hourly: {hourly}")
     df = pd.read_csv(physics_data_file, low_memory=False)
     df.columns = df.iloc[0]
@@ -110,10 +115,12 @@ def load_hms_basin_data(physics_data_file: Path, hourly: bool) -> pd.DataFrame:
     df['Time'] = df['Time'].replace('24:00:00', '00:00:00')
     df['date'] = pd.to_datetime(df['Day'], format='%d-%b-%y') + pd.to_timedelta(df['Time'])
     df.dropna(subset=['date'], inplace=True)
+    df = df.loc[:, ~df.columns.duplicated(keep=False)]
     df.set_index('date', inplace=True)
     return df
 
 def load_russian_river_data(data_dir: Path, hourly: bool) -> pd.DataFrame:  
+    # CHANGE TO USE clean_daily and clean_hourly
     if hourly:
         file_path = data_dir / 'hourly.csv'
     else:
@@ -130,6 +137,7 @@ def load_russian_river_data(data_dir: Path, hourly: bool) -> pd.DataFrame:
     df['Time'] = df['Time'].replace('24:00:00', '00:00:00')
     df['date'] = pd.to_datetime(df['Day'], format='%d-%b-%y') + pd.to_timedelta(df['Time'])
     df.dropna(subset=['date'], inplace=True)
+    df = df.loc[:, ~df.columns.duplicated(keep=False)]
     df.set_index('date', inplace=True)
     return df
 
