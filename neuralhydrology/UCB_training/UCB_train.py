@@ -21,6 +21,7 @@ import subprocess
 import time
 import webbrowser
 import xarray as xr
+import logging
 
 from neuralhydrology.utils.config import Config
 from neuralhydrology.training.train import start_training
@@ -81,7 +82,10 @@ class UCB_trainer:
         """
         Public method to return metrics and plot data visualizations of model preformance.
         """
-        self._get_predictions(period)
+        # Dynamically determine the key ('1h' for hourly, '1D' for daily)
+        time_resolution_key = '1h' if self._hourly else '1D'
+
+        self._get_predictions(time_resolution_key, period)
         self._metrics = calculate_all_metrics(
             self._observed, self._predictions)
         self._metrics = calculate_all_metrics(self._observed, self._predictions)
@@ -178,7 +182,7 @@ class UCB_trainer:
     #         self._test_predictions = self._model['Tuler']['1D']['xr']['ReservoirInflowFLOW-OBSERVED_sim']
 
     #     return
-    def _get_predictions(self, period='validation') -> dict:
+    def _get_predictions(self, time_resolution_key, period='validation') -> dict:
         """
         Private method to get and return predicted values and metrics after training and evaluation.
         For the single ensemble case only. --> Need to implement ensemble case still
@@ -197,6 +201,9 @@ class UCB_trainer:
         with open(results_file, "rb") as fp:
             results = pickle.load(fp)
 
+            #for debugging: log the structure of the results dictionary
+            # logging.info(f"Results structure: {results}")
+
             # Dynamically get the basin name
             self._basin_name = next(iter(results.keys()))  # Get the first basin key dynamically
             print(f"Using basin: {self._basin_name}")
@@ -211,23 +218,15 @@ class UCB_trainer:
             print("Observed_key: " + observed_key)
             print("Simulated_key: " + simulated_key)
 
-            # Check if keys exist
-            if observed_key not in results[self._basin_name]['1D']['xr']:
+            # Check if keys exist in the results dictionary
+            if observed_key not in results[self._basin_name][time_resolution_key]['xr']:
                 raise KeyError(f"Observed key '{observed_key}' not found in results for basin {self._basin_name}.")
-            if simulated_key not in results[self._basin_name]['1D']['xr']:
+            if simulated_key not in results[self._basin_name][time_resolution_key]['xr']:
                 raise KeyError(f"Simulated key '{simulated_key}' not found in results for basin {self._basin_name}.")
 
             # Extract observed and simulated data
-            self._observed = results[self._basin_name]['1D']['xr'][observed_key].sel(time_step=0)
-            self._predictions = results[self._basin_name]['1D']['xr'][simulated_key].sel(time_step=0)
-
-#        else:
-#            with open(self._model / "test" / f"model_epoch{str(self._config.epochs).zfill(3)}" / "test_results.p", "rb") as fp: 
-#                results = pickle.load(fp)
-#           self._basin_name = next(iter(results.keys()))
-#            self._basin_name = "Tuler"
-#            self._test_observed = self._model[self._basin_name]['1D']['xr']['ReservoirInflowFLOW-OBSERVED_obs']
-#            self._test_predictions = self._model[self._basin_name]['1D']['xr']['ReservoirInflowFLOW-OBSERVED_sim']
+            self._observed = results[self._basin_name][time_resolution_key]['xr'][observed_key].sel(time_step=0)
+            self._predictions = results[self._basin_name][time_resolution_key]['xr'][simulated_key].sel(time_step=0)
         return
 
     def _create_config(self) -> Config:
