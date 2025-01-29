@@ -110,9 +110,12 @@ def load_hms_basin_data(physics_data_file: Path, hourly: bool) -> pd.DataFrame:
     df.columns = df.columns.str.strip()
     df = df.drop(columns=['Ordinate'])
     df = df.rename(columns={'Date': 'Day', 'Time': 'Time'})
-    #if hourly:
-    #    df['Time'] = df['Time'] + ":00"
+    
+    # Increment the date by 1 day where Time is '24:00:00' and replace '24:00:00' with '00:00:00'
+    mask = df['Time'] == '24:00:00'
+    df.loc[mask, 'Day'] = (pd.to_datetime(df.loc[mask, 'Day'], format='%d-%b-%y') + pd.Timedelta(days=1)).dt.strftime('%d-%b-%y')
     df['Time'] = df['Time'].replace('24:00:00', '00:00:00')
+
     df['date'] = pd.to_datetime(df['Day'], format='%d-%b-%y') + pd.to_timedelta(df['Time'])
     df.dropna(subset=['date'], inplace=True)
     df = df.loc[:, ~df.columns.duplicated(keep=False)]
@@ -132,9 +135,12 @@ def load_russian_river_data(data_dir: Path, hourly: bool) -> pd.DataFrame:
     df.columns = df.columns.str.strip()
     df = df.drop(columns=['Ordinate'])
     df = df.rename(columns={'Date': 'Day', 'Time': 'Time'})
-    #if hourly:
-    #    df['Time'] = df['Time'] + ":00"
+    
+    # # Increment the date by 1 day where Time is '24:00:00'
+    mask = df['Time'] == '24:00:00'
+    df.loc[mask, 'Day'] = (pd.to_datetime(df.loc[mask, 'Day'], format='%d-%b-%y') + pd.Timedelta(days=1)).dt.strftime('%d-%b-%y')
     df['Time'] = df['Time'].replace('24:00:00', '00:00:00')
+
     df['date'] = pd.to_datetime(df['Day'], format='%d-%b-%y') + pd.to_timedelta(df['Time'])
     df.dropna(subset=['date'], inplace=True)
     df = df.loc[:, ~df.columns.duplicated(keep=False)]
