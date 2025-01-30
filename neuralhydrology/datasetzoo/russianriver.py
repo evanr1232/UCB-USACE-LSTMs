@@ -105,6 +105,21 @@ def load_hms_basin_data(physics_data_file: Path, hourly: bool) -> pd.DataFrame:
     # CHANGE TO USE clean_daily and clean_hourly
     logging.info(f"Loading data from file: {physics_data_file}, hourly: {hourly}")
     df = pd.read_csv(physics_data_file, low_memory=False)
+    cleaned_df = clean_df(df)
+    return cleaned_df
+
+def load_russian_river_data(data_dir: Path, hourly: bool) -> pd.DataFrame:  
+    # CHANGE TO USE clean_daily and clean_hourly
+    if hourly:
+        file_path = data_dir / 'hourly.csv'
+    else:
+        file_path = data_dir / 'daily.csv'
+    df = pd.read_csv(file_path, low_memory=False)
+    cleaned_df = clean_df(df)
+    return cleaned_df
+
+def clean_df(df):
+    #clean columns/rows
     df.columns = df.iloc[0]
     df = df[3:]
     df.columns = df.columns.str.strip()
@@ -116,35 +131,14 @@ def load_hms_basin_data(physics_data_file: Path, hourly: bool) -> pd.DataFrame:
     df.loc[mask, 'Day'] = (pd.to_datetime(df.loc[mask, 'Day'], format='%d-%b-%y') + pd.Timedelta(days=1)).dt.strftime('%d-%b-%y')
     df['Time'] = df['Time'].replace('24:00:00', '00:00:00')
 
+    # Combine 'Day' and 'Time' columns to create a new 'date' column, make sure duplicated columns are dropped
     df['date'] = pd.to_datetime(df['Day'], format='%d-%b-%y') + pd.to_timedelta(df['Time'])
     df.dropna(subset=['date'], inplace=True)
     df = df.loc[:, ~df.columns.duplicated(keep=False)]
     df.set_index('date', inplace=True)
-    return df
 
-def load_russian_river_data(data_dir: Path, hourly: bool) -> pd.DataFrame:  
-    # CHANGE TO USE clean_daily and clean_hourly
-    if hourly:
-        file_path = data_dir / 'hourly.csv'
-    else:
-        file_path = data_dir / 'daily.csv'
-    df = pd.read_csv(file_path, low_memory=False)
-    
-    df.columns = df.iloc[0]
-    df = df[3:]
-    df.columns = df.columns.str.strip()
-    df = df.drop(columns=['Ordinate'])
-    df = df.rename(columns={'Date': 'Day', 'Time': 'Time'})
-    
-    # # Increment the date by 1 day where Time is '24:00:00'
-    mask = df['Time'] == '24:00:00'
-    df.loc[mask, 'Day'] = (pd.to_datetime(df.loc[mask, 'Day'], format='%d-%b-%y') + pd.Timedelta(days=1)).dt.strftime('%d-%b-%y')
-    df['Time'] = df['Time'].replace('24:00:00', '00:00:00')
-
-    df['date'] = pd.to_datetime(df['Day'], format='%d-%b-%y') + pd.to_timedelta(df['Time'])
-    df.dropna(subset=['date'], inplace=True)
-    df = df.loc[:, ~df.columns.duplicated(keep=False)]
-    df.set_index('date', inplace=True)
+    # Drop 'Day' and 'Time' columns
+    df.drop(columns=['Day', 'Time'], inplace=True)
     return df
 
 def load_russian_river_attributes(data_dir: Path) -> pd.DataFrame:
