@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import subprocess
 import time
 import webbrowser
+import plotly.graph_objects as go
 from neuralhydrology.evaluation.metrics import calculate_all_metrics
 
 def clean_df(df):
@@ -100,6 +101,74 @@ def combinedPlot(lstm_results: Path, lstmPhysics_results: Path, HMS_results: Pat
     plt.show()
 
     return plt, metrics_df
+
+def fancyCombinedPlot(lstm_results: Path, lstmPhysics_results: Path, HMS_results: Path, title: str, fName = "metrics.csv"):
+    
+    lstm_df = pd.read_csv(lstm_results).rename(columns={'Predicted': 'LSTM_Predicted'})
+    lstm_df['Date'] = pd.to_datetime(lstm_df['Date'])
+    lstm_df.loc[lstm_df['LSTM_Predicted'] < 0, 'LSTM_Predicted'] = 0
+    
+    physics_lstm_df = pd.read_csv(lstmPhysics_results).rename(columns={'Predicted': 'PLSTM_Predicted'})
+    physics_lstm_df['Date'] = pd.to_datetime(physics_lstm_df['Date'])
+    physics_lstm_df.drop(columns=['Observed'], inplace=True)
+    physics_lstm_df.loc[physics_lstm_df['PLSTM_Predicted'] < 0, 'PLSTM_Predicted'] = 0
+    
+    hms_df = pd.read_csv(HMS_results)
+    cleaned_hms_df = clean_df(hms_df)
+    cleaned_hms_df.rename(columns={cleaned_hms_df.columns[0]: 'HMS_Predicted'}, inplace=True)
+    cleaned_hms_df = cleaned_hms_df.reset_index().rename(columns={'date': 'Date'})
+    cleaned_hms_df = cleaned_hms_df[['Date', 'HMS_Predicted']]
+
+    df = lstm_df.merge(cleaned_hms_df, how='right', on='Date').merge(physics_lstm_df, how='right', on='Date')
+    
+    df['Observed'] = pd.to_numeric(df['Observed'], errors='coerce')
+    df['HMS_Predicted'] = pd.to_numeric(df['HMS_Predicted'], errors='coerce')
+    df['LSTM_Predicted'] = pd.to_numeric(df['LSTM_Predicted'], errors='coerce')
+    df['PLSTM_Predicted'] = pd.to_numeric(df['PLSTM_Predicted'], errors='coerce')
+    
+    obs_da = xr.DataArray(df['Observed'].values, dims=["date"], coords={"date": df['Date']})
+    sim_da_hms = xr.DataArray(df['HMS_Predicted'].values, dims=["date"], coords={"date": df['Date']})
+    sim_da_lstm = xr.DataArray(df['LSTM_Predicted'].values, dims=["date"], coords={"date": df['Date']})
+    sim_da_plstm = xr.DataArray(df['PLSTM_Predicted'].values, dims=["date"], coords={"date": df['Date']})
+
+    metrics = {
+        "HMS": calculate_all_metrics(obs_da, sim_da_hms),
+        "LSTM": calculate_all_metrics(obs_da, sim_da_lstm),
+        "Physics_Informed_LSTM": calculate_all_metrics(obs_da, sim_da_plstm),
+    }
+
+    metrics_df = pd.DataFrame(metrics)
+    metrics_df.to_csv(fName)
+
+    fig = go.Figure()
+    
+    fig.add_trace(go.Scatter(x=df["Date"], y=df["Observed"], mode='lines', name='Observed'))
+    fig.add_trace(go.Scatter(x=df["Date"], y=df["HMS_Predicted"], mode='lines', name='HMS Prediction', opacity=0.8))
+    fig.add_trace(go.Scatter(x=df["Date"], y=df["LSTM_Predicted"], mode='lines', name='LSTM Prediction', opacity=0.8))
+    fig.add_trace(go.Scatter(x=df["Date"], y=df["PLSTM_Predicted"], mode='lines', name='Physics Informed LSTM', opacity=0.8))
+    
+    fig.update_layout(
+        title=title,
+        xaxis_title="Date",
+        yaxis_title="Inflow (cubic feet per second)",
+        template="seaborn",
+        hovermode="x unified",
+        xaxis=dict(
+            rangeselector=dict(
+                buttons=list([
+                    dict(count=1, label="1m", step="month", stepmode="backward"),
+                    dict(count=6, label="6m", step="month", stepmode="backward"),
+                    dict(count=1, label="1y", step="year", stepmode="backward"),
+                    dict(step="all")
+                ])
+            ),
+            rangeslider=dict(visible=True),
+            type="date"
+        ),
+    )
+    
+    fig.show()
+    return metrics_df
 
 def open_tensorboard(logdir: str, port: int = 6006):
     """

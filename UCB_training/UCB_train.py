@@ -13,7 +13,7 @@ from neuralhydrology.evaluation.metrics import calculate_all_metrics
 
 class UCB_trainer:
     """
-    A class to handle training, evaluation, and configuration of neural hydrology models.
+    A wrapper to facilitate easier training/evaluation of neural hydrology models.
     """
     
     def __init__(self, path_to_csv_folder: Path, yaml_path: Path, hyperparams: dict, 
@@ -28,7 +28,7 @@ class UCB_trainer:
             hyperparams (dict): Dictionary of hyperparameters for training.
             input_features (List[str], optional): List of input feature names. Defaults to None.
             num_ensemble_members (int, optional): Number of ensemble models to train. Defaults to 1.
-            physics_informed (bool, optional): Whether to include physics-informed inputs. Defaults to False.
+            physics_informed (bool, optional): Whether to include physics-informed inputs. Defaults to False. If True, physics_data_file must be provided.
             physics_data_file (Path, optional): Path to physics data file. Defaults to None.
             hourly (bool, optional): Whether to use hourly data. Defaults to False.
             extend_train_period (bool, optional): Extend training period to include validation. Defaults to False.
@@ -65,7 +65,7 @@ class UCB_trainer:
         if self._num_ensemble_members == 1:
             self._model = self._train_model()
             self._eval_model(self._model, period="validation")
-        else:
+        if self._num_ensemble_members > 1:
             self._model = self._train_ensemble()
             for model in self._model:
                 self._eval_model(model, period="validation")
@@ -93,19 +93,15 @@ class UCB_trainer:
             period (str, optional): Evaluation period. Defaults to 'validation'.
         """
         eval_run(run_dir=run_directory, period=period)
-        
-    
+            
     def _get_predictions(self, time_resolution_key, period='validation') -> List:
         """
-        Private method to get and return a list of predicted values from trained models.
+        Private method to update self._preditions with predicted values from trained models.
         Supports both single-model and ensemble cases.
         
         Args:
             time_resolution_key (str): The time resolution key, e.g., '1h' or '1D'.
-            period (str): The evaluation period, defaults to 'validation'.
-        
-        Returns:
-            List: A list containing the predictions, where each element corresponds to a model.
+            period (str): The evaluation period, defaults to 'validation' other options: 'train', 'test'.
         """
         
         if self._num_ensemble_members == 1:
@@ -155,7 +151,6 @@ class UCB_trainer:
     
     def _generate_obs_sim_plt(self, period='validation'):
         """
-        #needs to be cleaned up
         Private method to plot observed and simulated values over time with improved aesthetics and dynamic labels.
         """
         #setup plot
