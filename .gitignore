@@ -6,6 +6,9 @@
 *.swp
 .coverage
 
+# macOS system files
+.DS_Store
+
 # folder
 build/*
 dist/*
