@@ -81,8 +81,8 @@ class UCB_trainer:
         print('got predictions')
         self._generate_obs_sim_plt(period)
         self._metrics = calculate_all_metrics(self._observed, self._predictions)
-        self._generate_csv(period)
-        return self._metrics
+        path = self._generate_csv(period)
+        return path, self._metrics
     
     def _eval_model(self, run_directory, period="validation"):
         """
