@@ -15,10 +15,11 @@ class UCB_trainer:
     """
     A wrapper to facilitate easier training/evaluation of neural hydrology models.
     """
-    
-    def __init__(self, path_to_csv_folder: Path, yaml_path: Path, hyperparams: dict, 
-                 input_features: List[str] = None, num_ensemble_members: int = 1, 
-                 physics_informed: bool = False, physics_data_file: Path = None, hourly: bool=False, extend_train_period: bool=False, gpu: int = -1):
+
+    def __init__(self, path_to_csv_folder: Path, yaml_path: Path, hyperparams: dict,
+                 input_features: List[str] = None, num_ensemble_members: int = 1,
+                 physics_informed: bool = False, physics_data_file: Path = None,
+                 hourly: bool=False, extend_train_period: bool=False, gpu: int = -1):
         """
         Initialize the UCB_trainer class with configurations and training parameters.
 
@@ -28,7 +29,8 @@ class UCB_trainer:
             hyperparams (dict): Dictionary of hyperparameters for training.
             input_features (List[str], optional): List of input feature names. Defaults to None.
             num_ensemble_members (int, optional): Number of ensemble models to train. Defaults to 1.
-            physics_informed (bool, optional): Whether to include physics-informed inputs. Defaults to False. If True, physics_data_file must be provided.
+            physics_informed (bool, optional): Whether to include physics-informed inputs. Defaults to False.
+                                               If True, physics_data_file must be provided.
             physics_data_file (Path, optional): Path to physics data file. Defaults to None.
             hourly (bool, optional): Whether to use hourly data. Defaults to False.
             extend_train_period (bool, optional): Extend training period to include validation. Defaults to False.
@@ -64,126 +66,132 @@ class UCB_trainer:
         """
         if self._num_ensemble_members == 1:
             self._model = self._train_model()
+            # Evaluate on validation
             self._eval_model(self._model, period="validation")
-        if self._num_ensemble_members > 1:
+        else:
             self._model = self._train_ensemble()
             for model in self._model:
                 self._eval_model(model, period="validation")
         return self._model
-    
+
     def results(self, period='validation') -> dict:
         """
-        Public method to return metrics and plot data visualizations of model preformance.
+        Public method to return metrics and optionally plot data visualizations of model performance.
+
+        Args:
+            period (str): 'validation', 'test', or 'train'. Defaults to 'validation'.
         """
         time_resolution_key = '1h' if self._hourly else '1D'
 
+        # Load predictions from file
         self._get_predictions(time_resolution_key, period)
         print('got predictions')
+
+        # Generate plot
         self._generate_obs_sim_plt(period)
+
+        # Compute metrics
         self._metrics = calculate_all_metrics(self._observed, self._predictions)
+
+        # Save CSV
         path = self._generate_csv(period)
         return path, self._metrics
-    
+
     def _eval_model(self, run_directory, period="validation"):
         """
-        Evaluate a trained model.
+        Evaluate a trained model. Uses the standard neuralhydrology eval_run.
 
         Args:
-            run_directory (Path): Path to the trained model.
-            period (str, optional): Evaluation period. Defaults to 'validation'.
+            run_directory (Path): Path to the trained model directory.
+            period (str, optional): 'validation', 'train', or 'test'.
         """
         eval_run(run_dir=run_directory, period=period)
-            
-    def _get_predictions(self, time_resolution_key, period='validation') -> List:
+
+    def _get_predictions(self, time_resolution_key, period='validation'):
         """
-        Private method to update self._preditions with predicted values from trained models.
-        Supports both single-model and ensemble cases.
-        
+        Private method to load predictions from the model's result files.
+
         Args:
-            time_resolution_key (str): The time resolution key, e.g., '1h' or '1D'.
-            period (str): The evaluation period, defaults to 'validation' other options: 'train', 'test'.
+            time_resolution_key (str): '1h' or '1D'.
+            period (str): 'validation', 'test', or 'train'.
         """
-        
         if self._num_ensemble_members == 1:
             results_file = self._model / period / f"model_epoch{str(self._config.epochs).zfill(3)}" / f"{period}_results.p"
-            
+
+            # If results file doesn't exist, evaluate the model
             if not results_file.exists():
                 self._eval_model(self._model, period)
-            
+
             if not results_file.exists():
                 raise FileNotFoundError(f"Failed to evaluate or locate results for {period}. Expected file at: {results_file}")
-            
+
             with open(results_file, "rb") as fp:
                 results = pickle.load(fp)
-            #logging.info(f"Results structure: {results}") #DEBUG
-            
+
             self._basin_name = next(iter(results.keys()))
             self._target_variable = self._config.target_variables[0]
-            
+
             observed_key = f"{self._target_variable}_obs"
             simulated_key = f"{self._target_variable}_sim"
-            
+
             if observed_key not in results[self._basin_name][time_resolution_key]['xr']:
                 raise KeyError(f"Observed key '{observed_key}' not found in results for basin {self._basin_name}.")
             if simulated_key not in results[self._basin_name][time_resolution_key]['xr']:
                 raise KeyError(f"Simulated key '{simulated_key}' not found in results for basin {self._basin_name}.")
-            
+
             self._observed = results[self._basin_name][time_resolution_key]['xr'][observed_key].isel(time_step=0)
             self._predictions = results[self._basin_name][time_resolution_key]['xr'][simulated_key].isel(time_step=0)
-        
-        if self._num_ensemble_members > 1:
+
+        else:  # Ensemble case
             results = create_results_ensemble(run_dirs=self._model, period=period)
-            #logging.info(f"Results structure: {results}") #DEBUG
             self._basin_name = next(iter(results.keys()))
             self._target_variable = self._config.target_variables[0]
-            
+
             observed_key = f"{self._target_variable}_obs"
             simulated_key = f"{self._target_variable}_sim"
-            
+
             if observed_key not in results[self._basin_name][time_resolution_key]['xr']:
                 raise KeyError(f"Observed key '{observed_key}' not found in results for basin {self._basin_name}.")
             if simulated_key not in results[self._basin_name][time_resolution_key]['xr']:
                 raise KeyError(f"Simulated key '{simulated_key}' not found in results for basin {self._basin_name}.")
-            
+
             self._observed = results[self._basin_name][time_resolution_key]['xr'][observed_key]
             self._predictions = results[self._basin_name][time_resolution_key]['xr'][simulated_key]
-        return
-    
+
     def _generate_obs_sim_plt(self, period='validation'):
         """
-        Private method to plot observed and simulated values over time with improved aesthetics and dynamic labels.
+        Private method to plot observed vs simulated values.
         """
-        #setup plot
         fig, ax = plt.subplots(figsize=(16, 10))
+
+        # Label depends on whether it's physics or not
         if self._physics_informed:
-            simulated_label = 'HybridSimulation'
-        else: simulated_label = 'Simulated'
+            simulated_label = "HybridSimulation"
+        else:
+            simulated_label = "Simulated"
+
+        # Single-model
         if self._num_ensemble_members == 1:
             ax.plot(self._observed["date"], self._observed, label="Observed", linewidth=1.5)
             ax.plot(self._predictions["date"], self._predictions, label=simulated_label, linewidth=1.5)
         else:
+            # Ensemble
             ax.plot(self._observed["datetime"], self._observed, label="Observed", linewidth=1.5)
-            logging.info(f"Predictions: {self._predictions}")
             ax.plot(self._predictions["datetime"], self._predictions, label=simulated_label, linewidth=1.5)
 
-        #dynamic labels and title using stored target variable and basin name
         ax.set_ylabel(f"{self._target_variable} (units)", fontsize=14)
         ax.set_xlabel("Date", fontsize=14)
-        ax.set_title(f"{self._basin_name} - {self._target_variable} Over Time ({period} period)", fontsize=16) #change this
-
+        ax.set_title(f"{self._basin_name} - {self._target_variable} Over Time ({period})", fontsize=16)
         ax.legend(fontsize=12)
         ax.grid(True, linestyle="--", alpha=0.7)
-        
-        fig.autofmt_xdate() #date formatting
 
+        fig.autofmt_xdate()
         plt.tight_layout()
         plt.show()
-        return
-    
+
     def _generate_csv(self, period='validation'):
         """
-        Private method to generate a CSV file of observed and predicted values. Used in the .results() function.
-        :return:
+        Private method to save predictions to a CSV file.
         """
         if self._observed is None or self._predictions is None:
             print("[ERROR] Observed or predicted values are None. Cannot generate CSV.")
@@ -209,79 +217,67 @@ class UCB_trainer:
 
         return output_path
 
-    
     def _train_model(self) -> Path:
         """
         Train a single model instance.
-
-        Returns:
-            Path: Path to the trained model's directory.
         """
-
         start_training(self._config)
         return self._config.run_dir
 
     def _train_ensemble(self) -> List[Path]:
         """
         Train multiple models as an ensemble.
-
-        Returns:
-            List[Path]: A list of directories containing trained models.
         """
         paths = []
         for _ in range(self._num_ensemble_members):
             path = self._train_model()
             paths.append(path)
         return paths
-    
+
     def _create_config(self) -> Config:
         """
-        Private method to create Configuration object for training from user specifications.
+        Private method to create a Configuration object in dev_mode,
+        ensuring the saved config also contains 'dev_mode: True'.
         """
         if not self._yaml_path.exists():
             raise FileNotFoundError(f"YAML configuration file not found: {self._yaml_path}")
 
-        # Load the base configuration from the provided YAML file
-        config = Config(self._yaml_path)
+        config = Config(self._yaml_path, dev_mode=True)
 
-        # Ensure 'save_weights_every' is set ##not sure if this is necessary
         if 'save_weights_every' not in self._hyperparams:
             self._hyperparams['save_weights_every'] = self._hyperparams['epochs']
-        
-        # Update dynamic inputs if provided
-        if self._dynamic_inputs is not None: 
-            config.update_config({'dynamic_inputs': self._dynamic_inputs})
 
-        # Extend train period if specified
+        if self._dynamic_inputs is not None:
+            config.update_config({'dynamic_inputs': self._dynamic_inputs}, dev_mode=True)
+
         if self._extended_train_period:
-            config.update_config({'train_end_date': config.validation_end_date})
+            config.update_config({'train_end_date': config.validation_end_date}, dev_mode=True)
 
-        # Update other hyperparameters
-        config.update_config(self._hyperparams)
-        config.update_config({'data_dir': self._data_dir})
-        config.update_config({'physics_informed': self._physics_informed})
-        config.update_config({'hourly': self._hourly})
+        config.update_config(self._hyperparams, dev_mode=True)
+        config.update_config({'data_dir': self._data_dir}, dev_mode=True)
+        config.update_config({'physics_informed': self._physics_informed}, dev_mode=True)
+        config.update_config({'hourly': self._hourly}, dev_mode=True)
 
-        # Handle physics-informed setup
         if self._physics_informed:
             if self._physics_data_file:
-                config.update_config({'physics_data_file': self._physics_data_file})
+                config.update_config({'physics_data_file': self._physics_data_file}, dev_mode=True)
             else:
                 raise ValueError("Physics-informed is enabled, but no physics data file was provided.")
 
-        # Set the device here
+        # GPU or CPU
         if self._gpu is not None and self._gpu >= 0:
-            config.update_config({'device': f"cuda:{self._gpu}"})
+            config.update_config({'device': f"cuda:{self._gpu}"}, dev_mode=True)
         else:
-            config.update_config({'device': "cpu"})
+            config.update_config({'device': "cpu"}, dev_mode=True)
 
-        # Store the config object
+        config.update_config({"dev_mode": True}, dev_mode=True)
+
         self._config = config
 
-        # Validate config values
         if self._config.epochs % self._config.save_weights_every != 0:
             raise ValueError(
-                f"The 'save_weights_every' parameter must divide the 'epochs' parameter evenly. "
-                f"Ensure 'epochs' is a multiple of {self._config.save_weights_every} to use the most recent weights for the final model."
+                f"The 'save_weights_every' parameter must divide 'epochs' evenly. "
+                f"Got epochs={self._config.epochs}, save_weights_every={self._config.save_weights_every}."
             )
-        return
+
+        return config
