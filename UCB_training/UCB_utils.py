@@ -31,73 +31,77 @@ def clean_df(df):
     df.drop(columns=['Day', 'Time'], inplace=True)
     return df
 
-def combinedPlot(lstm_results: Path, lstmPhysics_results: Path, HMS_results: Path, title: str, fName = "metrics.csv"):
-    
-    lstm_df = pd.read_csv(lstm_results).rename(columns={'Predicted': 'LSTM_Predicted'}) #columns: Date, Observed, Predicted --> LSTM_Predicted
+def combinedPlot(lstm_results: Path, lstmPhysics_results: Path, HMS_results: Path, title: str,
+fName: str = "metrics.csv", plot_filename: str = None):
+    """Plot Observed, LSTM, Physics-LSTM, and HMS timeseries with Matplotlib,
+    and save metrics + optionally the figure.
+
+    Args:
+        lstm_results (Path): CSV with columns [Date, Observed, Predicted].
+        lstmPhysics_results (Path): CSV with columns [Date, Observed, Predicted].
+        HMS_results (Path): CSV with columns [Date, ...someHMS...].
+        title (str): Chart title.
+        fName (str): CSV filename for saving metrics (default: metrics.csv).
+        plot_filename (str): If given, saves the Matplotlib figure to e.g. 'myplot.png'.
+    """
+    lstm_df = pd.read_csv(lstm_results).rename(columns={'Predicted': 'LSTM_Predicted'})
     lstm_df['Date'] = pd.to_datetime(lstm_df['Date'])
     lstm_df.loc[lstm_df['LSTM_Predicted'] < 0, 'LSTM_Predicted'] = 0
-    
-    physics_lstm_df = pd.read_csv(lstmPhysics_results).rename(columns={'Predicted': 'PLSTM_Predicted'}) #columns: Date, Observed, Predicted --> PLSTM_Predicted
-    physics_lstm_df['Date'] = pd.to_datetime(physics_lstm_df['Date'])
-    physics_lstm_df.drop(columns=['Observed'], inplace=True)
-    physics_lstm_df.loc[physics_lstm_df['PLSTM_Predicted'] < 0, 'PLSTM_Predicted'] = 0
-    
-    hms_df = pd.read_csv(HMS_results) #columns: Date, HMS_predicted
-    cleaned_hms_df = clean_df(hms_df)
-    # Rename the first column to 'HMS_Predicted'
-    cleaned_hms_df.rename(columns={cleaned_hms_df.columns[0]: 'HMS_Predicted'}, inplace=True)
 
-    # Add a 'Date' column containing the index values
+    physics_lstm_df = pd.read_csv(lstmPhysics_results).rename(columns={'Predicted': 'PLSTM_Predicted'})
+    physics_lstm_df['Date'] = pd.to_datetime(physics_lstm_df['Date'])
+
+    physics_lstm_df.drop(columns=['Observed'], inplace=True, errors='ignore')
+    physics_lstm_df.loc[physics_lstm_df['PLSTM_Predicted'] < 0, 'PLSTM_Predicted'] = 0
+
+    hms_df = pd.read_csv(HMS_results)
+    cleaned_hms_df = clean_df(hms_df)
+    cleaned_hms_df.rename(columns={cleaned_hms_df.columns[0]: 'HMS_Predicted'}, inplace=True)
     cleaned_hms_df = cleaned_hms_df.reset_index().rename(columns={'date': 'Date'})
     cleaned_hms_df = cleaned_hms_df[['Date', 'HMS_Predicted']]
 
-    # Merge the LSTM, PLSTM and HMS DataFrames on the 'Date' column
-    df = lstm_df.merge(cleaned_hms_df, how='right', on='Date').merge(physics_lstm_df, how='right', on='Date')
+    df = (
+        lstm_df
+        .merge(cleaned_hms_df, how='right', on='Date')
+        .merge(physics_lstm_df, how='right', on='Date')
+    )
 
-    # Ensure that the columns contain only numeric values
-    df['Observed'] = pd.to_numeric(df['Observed'], errors='coerce')
-    df['HMS_Predicted'] = pd.to_numeric(df['HMS_Predicted'], errors='coerce')
-    df['LSTM_Predicted'] = pd.to_numeric(df['LSTM_Predicted'], errors='coerce')
-    df['PLSTM_Predicted'] = pd.to_numeric(df['PLSTM_Predicted'], errors='coerce')
-    
-    # Convert pandas Series to xarray DataArray with a datetime coordinate
+    df['Observed']         = pd.to_numeric(df['Observed'], errors='coerce')
+    df['HMS_Predicted']    = pd.to_numeric(df['HMS_Predicted'], errors='coerce')
+    df['LSTM_Predicted']   = pd.to_numeric(df['LSTM_Predicted'], errors='coerce')
+    df['PLSTM_Predicted']  = pd.to_numeric(df['PLSTM_Predicted'], errors='coerce')
+
     obs_da = xr.DataArray(df['Observed'].values, dims=["date"], coords={"date": df['Date']})
-    sim_da_hms = xr.DataArray(df['HMS_Predicted'].values, dims=["date"], coords={"date": df['Date']})
-    sim_da_lstm = xr.DataArray(df['LSTM_Predicted'].values, dims=["date"], coords={"date": df['Date']})
-    sim_da_plstm = xr.DataArray(df['PLSTM_Predicted'].values, dims=["date"], coords={"date": df['Date']})
+    sim_da_hms   = xr.DataArray(df['HMS_Predicted'].values,    dims=["date"], coords={"date": df['Date']})
+    sim_da_lstm  = xr.DataArray(df['LSTM_Predicted'].values,   dims=["date"], coords={"date": df['Date']})
+    sim_da_plstm = xr.DataArray(df['PLSTM_Predicted'].values,  dims=["date"], coords={"date": df['Date']})
 
-    # Collect metrics into a dictionary
     metrics = {
-        "HMS": calculate_all_metrics(obs_da, sim_da_hms),
-        "LSTM": calculate_all_metrics(obs_da, sim_da_lstm),
+        "HMS":                   calculate_all_metrics(obs_da, sim_da_hms),
+        "LSTM":                  calculate_all_metrics(obs_da, sim_da_lstm),
         "Physics_Informed_LSTM": calculate_all_metrics(obs_da, sim_da_plstm),
     }
-
     metrics_df = pd.DataFrame(metrics)
-    output_csv_path = fName
-    metrics_df.to_csv(output_csv_path)
+    metrics_df.to_csv(fName, index=False)
+    print(f"[INFO] Wrote metrics CSV: {fName}")
 
-    # Plot all columns against the "date_col" (x-axis)
     plt.figure(figsize=(30, 10))
-    
-    plt.plot(df["Date"], df["Observed"], label='Observed', linewidth=2)
-    plt.plot(df["Date"], df["HMS_Predicted"], label='HMS Prediction',  linewidth=2, alpha=0.7)
-    plt.plot(df["Date"], df["LSTM_Predicted"], label='LSTM Prediction', linewidth=2, alpha=0.8)
-    plt.plot(df["Date"], df["PLSTM_Predicted"], label='Physics Informed LSTM Prediction', linewidth=2, alpha=0.7)
-    
-    # Customize the plot
-    plt.tick_params(axis='x', labelsize=15)  # For x-axis tick labels
-    plt.tick_params(axis='y', labelsize=15) 
+    plt.plot(df["Date"], df["Observed"],          label='Observed', linewidth=2)
+    plt.plot(df["Date"], df["HMS_Predicted"],     label='HMS Prediction', linewidth=2, alpha=0.7)
+    plt.plot(df["Date"], df["LSTM_Predicted"],    label='LSTM Prediction', linewidth=2, alpha=0.8)
+    plt.plot(df["Date"], df["PLSTM_Predicted"],   label='Physics Informed LSTM', linewidth=2, alpha=0.7)
+
     plt.xlabel("Date", fontsize=20)
-    plt.ylabel("Inflow (cubic feet per second)", fontsize=20)
+    plt.ylabel("Inflow (cfs)", fontsize=20)
     plt.title(title, fontsize=30)
     plt.legend(fontsize=25, loc="upper right")
     plt.grid(True, alpha=0.4)
-
-    # Set x-axis limits to the extent of the observed data
     plt.xlim(df['Date'].min(), df['Date'].max())
-
     plt.tight_layout()
+
+    if plot_filename:
+        plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
+        print(f"[INFO] Saved figure: {plot_filename}")
     plt.show()
 
     return plt, metrics_df
