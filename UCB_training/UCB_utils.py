@@ -90,7 +90,7 @@ def combinedPlot(lstm_results: Path, lstmPhysics_results: Path, HMS_results: Pat
         "Physics_Informed_LSTM": calculate_all_metrics(obs_da, sim_da_plstm),
     }
     metrics_df = pd.DataFrame(metrics)
-    metrics_df.to_csv(fName, index=False)
+    metrics_df.to_csv(fName, index=True)
     print(f"[INFO] Wrote metrics CSV: {fName}")
 
     plt.figure(figsize=(30, 10))
@@ -154,7 +154,8 @@ def fancyCombinedPlot(lstm_results: Path, lstmPhysics_results: Path, HMS_results
     }
 
     metrics_df = pd.DataFrame(metrics)
-    metrics_df.to_csv(fName)
+    metrics_df.to_csv(fName, index=True)
+    print(f"[INFO] Wrote metrics CSV: {fName}")
 
     fig = go.Figure()
 
@@ -236,7 +237,7 @@ def combinedPlotFromDf(
         "Physics_Informed_LSTM": calculate_all_metrics(obs_da, sim_da_plstm),
     }
     metrics_df = pd.DataFrame(metrics_dict)
-    metrics_df.to_csv(fName, index=False)
+    metrics_df.to_csv(fName, index=True)
     print(f"[INFO] Wrote metrics CSV: {fName}")
 
     plt.figure(figsize=(30, 10))
@@ -297,7 +298,7 @@ def fancyCombinedPlotFromDf(
         "Physics_Informed_LSTM": calculate_all_metrics(obs_da, sim_da_plstm),
     }
     metrics_df = pd.DataFrame(metrics_dict)
-    metrics_df.to_csv(fName, index=False)
+    metrics_df.to_csv(fName, index=True)
     print(f"[INFO] Wrote metrics CSV: {fName}")
 
     fig = go.Figure()
