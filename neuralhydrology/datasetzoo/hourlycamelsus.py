@@ -120,6 +120,7 @@ class HourlyCamelsUS(camelsus.CamelsUS):
                 discharge_m3s = df['qobs_mm_per_hour'].values / 1000 * attributes.area_gages2[basin] * 1e6 / 60**2
                 df['synthetic_qobs_stage_meters'] = rating_curves[basin].discharge_to_stage(discharge_m3s)
 
+        df.to_csv(f"C://Users//arman//Dropbox//The University//Projects//Camels_Test_1.csv")
         return df
 
     def load_hourly_data(self, basin: str, forcings: str) -> pd.DataFrame:
@@ -157,6 +158,7 @@ class HourlyCamelsUS(camelsus.CamelsUS):
             # add discharge
             df = df.join(load_hourly_us_discharge(self.cfg.data_dir, basin))
 
+        df.to_csv(f"C://Users//arman//Dropbox//The University//Projects//Camels_Test_2.csv")
         return df
 
 
@@ -192,6 +194,7 @@ def load_hourly_us_forcings(data_dir: Path, basin: str, forcings: str) -> pd.Dat
     else:
         raise FileNotFoundError(f'No file for Basin {basin} at {forcing_path}')
 
+    pd.read_csv(file_path, index_col=['date'], parse_dates=['date']).to_csv(f"C://Users//arman//Dropbox//The University//Projects//Camels_Test_3.csv")    
     return pd.read_csv(file_path, index_col=['date'], parse_dates=['date'])
 
 
@@ -228,6 +231,7 @@ def load_hourly_us_discharge(data_dir: Path, basin: str) -> pd.DataFrame:
     else:
         raise FileNotFoundError(f'No file for Basin {basin} at {discharge_path}')
 
+    pd.read_csv(file_path, index_col=['date'], parse_dates=['date']).to_csv(f"C://Users//arman//Dropbox//The University//Projects//Camels_Test_4.csv")
     return pd.read_csv(file_path, index_col=['date'], parse_dates=['date'])
 
 
@@ -263,6 +267,7 @@ def load_hourly_us_stage(data_dir: Path, basin: str) -> pd.Series:
     df = df.resample('H').mean()
     df["gauge_height_m"] = df["gauge_height_ft"] * 0.3048
 
+    df["gauge_height_m"].to_csv(f"C://Users//arman//Dropbox//The University//Projects//Camels_Test_5.csv")
     return df["gauge_height_m"]
 
 
@@ -286,4 +291,5 @@ def load_hourly_us_netcdf(data_dir: Path, forcings: str) -> xarray.Dataset:
     if not netcdf_path.is_file():
         raise FileNotFoundError(f'No NetCDF file for hourly streamflow and {forcings} at {netcdf_path}.')
 
+    
     return xarray.open_dataset(netcdf_path)
