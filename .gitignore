@@ -23,5 +23,4 @@ docs/build/*
 
 #UCB
 **/runs/
-*.csv
 russian_river_data/ 
