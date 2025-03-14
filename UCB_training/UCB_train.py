@@ -1,10 +1,13 @@
 from pathlib import Path
+import platform
+
 import matplotlib.pyplot as plt
 import pickle
 import logging
 import pandas as pd
 from typing import List
 
+import torch
 from neuralhydrology.utils.config import Config
 from neuralhydrology.training.train import start_training
 from neuralhydrology.nh_run import eval_run
@@ -19,7 +22,7 @@ class UCB_trainer:
     def __init__(self, path_to_csv_folder: Path, yaml_path: Path, hyperparams: dict,
                  input_features: List[str] = None, num_ensemble_members: int = 1,
                  physics_informed: bool = False, physics_data_file: Path = None,
-                 hourly: bool=False, extend_train_period: bool=False, gpu: int = -1):
+                 hourly: bool=False, extend_train_period: bool=False, gpu: int = -1, is_mts: bool = False):
         """
         Initialize the UCB_trainer class with configurations and training parameters.
 
@@ -46,6 +49,7 @@ class UCB_trainer:
         self._yaml_path = yaml_path
         self._hourly = hourly
         self._extended_train_period = extend_train_period
+        self._is_mts = is_mts
 
         self._config = None
         self._create_config()
@@ -74,14 +78,17 @@ class UCB_trainer:
                 self._eval_model(model, period="validation")
         return self._model
 
-    def results(self, period='validation') -> dict:
+    def results(self, period='validation', mts_trk = "1H") -> dict:
         """
         Public method to return metrics and optionally plot data visualizations of model performance.
 
         Args:
             period (str): 'validation', 'test', or 'train'. Defaults to 'validation'.
         """
-        time_resolution_key = '1h' if self._hourly else '1D'
+        if self._is_mts:
+            time_resolution_key = mts_trk
+        else:
+            time_resolution_key = '1h' if self._hourly else '1D'
 
         # Load predictions from file
         self._get_predictions(time_resolution_key, period)
@@ -94,7 +101,7 @@ class UCB_trainer:
         self._metrics = calculate_all_metrics(self._observed, self._predictions)
 
         # Save CSV
-        path = self._generate_csv(period)
+        path = self._generate_csv(period, freq_key=time_resolution_key if self._is_mts else None)
         return path, self._metrics
 
     def _eval_model(self, run_directory, period="validation"):
@@ -189,31 +196,38 @@ class UCB_trainer:
         plt.tight_layout()
         plt.show()
 
-    def _generate_csv(self, period='validation'):
+    def _generate_csv(self, period='validation', freq_key: str = None) -> Path:
         """
-        Private method to save predictions to a CSV file.
+        Save predictions to a CSV file in the run directory.
+
+        If is_mts=True and freq_key is "1H" vs "1D", we can optionally suffix the CSV name.
         """
         if self._observed is None or self._predictions is None:
-            print("[ERROR] Observed or predicted values are None. Cannot generate CSV.")
-            return
+            print("[ERROR] Observed or predicted are None. Not saving CSV.")
+            return Path()
+
+        base_name = f"results_output_{period}"
+
+        if self._is_mts and freq_key:
+            base_name += f"_{freq_key}"
+
+        output_path = Path(self._config.run_dir) / f"{base_name}.csv"
 
         try:
             if self._num_ensemble_members == 1:
-                dates = self._observed['date'].values
+                dates = self._observed["date"].values
             else:
-                dates = self._observed['datetime'].values
+                dates = self._observed["datetime"].values
 
             df = pd.DataFrame({
-                'Date': dates,
-                'Observed': self._observed.values,
-                'Predicted': self._predictions.values
+                "Date": dates,
+                "Observed": self._observed.values,
+                "Predicted": self._predictions.values
             })
-
-            output_path = Path(self._config.run_dir) / f"results_output_{period}.csv"
             df.to_csv(output_path, index=False)
             print(f"[INFO] CSV output saved at: {output_path}")
-        except Exception as e:
-            print(f"[ERROR] Failed to generate CSV: {e}")
+        except Exception as exc:
+            print(f"[ERROR] Could not save CSV. Reason: {exc}")
 
         return output_path
 
@@ -232,6 +246,10 @@ class UCB_trainer:
         for _ in range(self._num_ensemble_members):
             path = self._train_model()
             paths.append(path)
+        for path in paths:
+            self._eval_model(path, period="validation")
+            self._eval_model(path, period="test")
+
         return paths
 
     def _create_config(self) -> Config:
@@ -265,12 +283,24 @@ class UCB_trainer:
                 raise ValueError("Physics-informed is enabled, but no physics data file was provided.")
 
         # GPU or CPU
-        if self._gpu is not None and self._gpu >= 0:
-            config.update_config({'device': f"cuda:{self._gpu}"}, dev_mode=True)
+        if self._gpu == 0:
+            selected_device = "cuda:0"
+            print("[UCB Trainer] Using CUDA device: 'cuda:0'")
+        elif self._gpu == -2:
+            selected_device = "cpu"
+            print("[UCB Trainer] Forcing CPU (gpu=-2).")
+        # elif self._gpu == -1:
+        #     if platform.system() == "Darwin" and torch.backends.mps.is_available():
+        #         selected_device = "mps"
+        #         print("[UCB Trainer] Using MPS device on Apple Silicon.")
+        #     else:
+        #         selected_device = "cpu"
+        #         print("[UCB Trainer] Using CPU (auto-detect fallback).")
         else:
-            config.update_config({'device': "cpu"}, dev_mode=True)
+            selected_device = "cpu"
+            print(f"[UCB Trainer] Using CPU (unhandled gpu={self._gpu}).")
 
-        config.update_config({"dev_mode": True}, dev_mode=True)
+        config.update_config({'device': selected_device}, dev_mode=True)
 
         self._config = config
 
