@@ -13,6 +13,7 @@ from neuralhydrology.training.train import start_training
 from neuralhydrology.nh_run import eval_run
 from neuralhydrology.utils.nh_results_ensemble import create_results_ensemble
 from neuralhydrology.evaluation.metrics import calculate_all_metrics
+from UCB_training.UCB_utils import calculate_pbias
 
 class UCB_trainer:
     """
@@ -99,6 +100,8 @@ class UCB_trainer:
 
         # Compute metrics
         self._metrics = calculate_all_metrics(self._observed, self._predictions)
+        pbias_value = calculate_pbias(self._observed, self._predictions)
+        self._metrics["PBIAS"] = pbias_value
 
         # Save CSV
         path = self._generate_csv(period, freq_key=time_resolution_key if self._is_mts else None)

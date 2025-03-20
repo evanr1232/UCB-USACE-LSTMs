@@ -7,6 +7,7 @@ import time
 import webbrowser
 import plotly.graph_objects as go
 from neuralhydrology.evaluation.metrics import calculate_all_metrics
+import numpy as np
 
 
 def clean_df(df):
@@ -366,3 +367,15 @@ def open_tensorboard(logdir: str, port: int = 6006):
         raise Exception(f"Failed to start TensorBoard: {e}")
 
     return process
+
+def calculate_pbias(observed, simulated):
+    """"
+    params: observed & simulated both time series (arrays)
+    output: float pbias
+    """
+    if observed.shape != simulated.shape:
+        raise ValueError("Observed and simulated DataArrays must have the same shape.")
+    
+    pbias = ((observed - simulated).sum() / observed.sum()) * 100
+    
+    return pbias.item()
