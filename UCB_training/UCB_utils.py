@@ -85,11 +85,28 @@ def combinedPlot(lstm_results: Path, lstmPhysics_results: Path, HMS_results: Pat
     sim_da_lstm = xr.DataArray(df['LSTM_Predicted'].values, dims=["date"], coords={"date": df['Date']})
     sim_da_plstm = xr.DataArray(df['PLSTM_Predicted'].values, dims=["date"], coords={"date": df['Date']})
 
+    # metrics = {
+    #     "HMS": calculate_all_metrics(obs_da, sim_da_hms),
+    #     "LSTM": calculate_all_metrics(obs_da, sim_da_lstm),
+    #     "Physics_Informed_LSTM": calculate_all_metrics(obs_da, sim_da_plstm),
+    # }
+
+    hms_metrics = calculate_all_metrics(obs_da, sim_da_hms)
+    hms_pbias_value = calculate_pbias(obs_da, sim_da_hms)
+    hms_metrics["PBIAS"] = hms_pbias_value
+    lstm_metrics = calculate_all_metrics(obs_da, sim_da_lstm)
+    lstm_pbias_value = calculate_pbias(obs_da, sim_da_lstm)
+    lstm_metrics["PBIAS"] = lstm_pbias_value
+    plstm_metrics = calculate_all_metrics(obs_da, sim_da_plstm)
+    plstm_pbias_value = calculate_pbias(obs_da, sim_da_plstm)
+    plstm_metrics["PBIAS"] = plstm_pbias_value
+       
     metrics = {
-        "HMS": calculate_all_metrics(obs_da, sim_da_hms),
-        "LSTM": calculate_all_metrics(obs_da, sim_da_lstm),
-        "Physics_Informed_LSTM": calculate_all_metrics(obs_da, sim_da_plstm),
+        "HMS": hms_metrics,
+        "LSTM": lstm_metrics,
+        "Physics_Informed_LSTM": plstm_metrics,
     }
+
     metrics_df = pd.DataFrame(metrics)
     metrics_df.to_csv(fName, index=True)
     print(f"[INFO] Wrote metrics CSV: {fName}")
@@ -148,10 +165,26 @@ def fancyCombinedPlot(lstm_results: Path, lstmPhysics_results: Path, HMS_results
     sim_da_lstm = xr.DataArray(df['LSTM_Predicted'].values, dims=["date"], coords={"date": df['Date']})
     sim_da_plstm = xr.DataArray(df['PLSTM_Predicted'].values, dims=["date"], coords={"date": df['Date']})
 
+    # metrics = {
+    #     "HMS": calculate_all_metrics(obs_da, sim_da_hms),
+    #     "LSTM": calculate_all_metrics(obs_da, sim_da_lstm),
+    #     "Physics_Informed_LSTM": calculate_all_metrics(obs_da, sim_da_plstm),
+    # }
+
+    hms_metrics = calculate_all_metrics(obs_da, sim_da_hms)
+    hms_pbias_value = calculate_pbias(obs_da, sim_da_hms)
+    hms_metrics["PBIAS"] = hms_pbias_value
+    lstm_metrics = calculate_all_metrics(obs_da, sim_da_lstm)
+    lstm_pbias_value = calculate_pbias(obs_da, sim_da_lstm)
+    lstm_metrics["PBIAS"] = lstm_pbias_value
+    plstm_metrics = calculate_all_metrics(obs_da, sim_da_plstm)
+    plstm_pbias_value = calculate_pbias(obs_da, sim_da_plstm)
+    plstm_metrics["PBIAS"] = plstm_pbias_value
+       
     metrics = {
-        "HMS": calculate_all_metrics(obs_da, sim_da_hms),
-        "LSTM": calculate_all_metrics(obs_da, sim_da_lstm),
-        "Physics_Informed_LSTM": calculate_all_metrics(obs_da, sim_da_plstm),
+        "HMS": hms_metrics,
+        "LSTM": lstm_metrics,
+        "Physics_Informed_LSTM": plstm_metrics,
     }
 
     metrics_df = pd.DataFrame(metrics)
@@ -232,11 +265,28 @@ def combinedPlotFromDf(
     sim_da_lstm = xr.DataArray(df["LSTM_Predicted"].values, dims=["date"], coords={"date": df["Date"]})
     sim_da_plstm = xr.DataArray(df["PLSTM_Predicted"].values, dims=["date"], coords={"date": df["Date"]})
 
+    # metrics_dict = {
+    #     "HMS": calculate_all_metrics(obs_da, sim_da_hms),
+    #     "LSTM": calculate_all_metrics(obs_da, sim_da_lstm),
+    #     "Physics_Informed_LSTM": calculate_all_metrics(obs_da, sim_da_plstm),
+    # }
+
+    hms_metrics = calculate_all_metrics(obs_da, sim_da_hms)
+    hms_pbias_value = calculate_pbias(obs_da, sim_da_hms)
+    hms_metrics["PBIAS"] = hms_pbias_value
+    lstm_metrics = calculate_all_metrics(obs_da, sim_da_lstm)
+    lstm_pbias_value = calculate_pbias(obs_da, sim_da_lstm)
+    lstm_metrics["PBIAS"] = lstm_pbias_value
+    plstm_metrics = calculate_all_metrics(obs_da, sim_da_plstm)
+    plstm_pbias_value = calculate_pbias(obs_da, sim_da_plstm)
+    plstm_metrics["PBIAS"] = plstm_pbias_value
+       
     metrics_dict = {
-        "HMS": calculate_all_metrics(obs_da, sim_da_hms),
-        "LSTM": calculate_all_metrics(obs_da, sim_da_lstm),
-        "Physics_Informed_LSTM": calculate_all_metrics(obs_da, sim_da_plstm),
+        "HMS": hms_metrics,
+        "LSTM": lstm_metrics,
+        "Physics_Informed_LSTM": plstm_metrics,
     }
+
     metrics_df = pd.DataFrame(metrics_dict)
     metrics_df.to_csv(fName, index=True)
     print(f"[INFO] Wrote metrics CSV: {fName}")
@@ -293,11 +343,28 @@ def fancyCombinedPlotFromDf(
     sim_da_lstm = xr.DataArray(df["LSTM_Predicted"].values, dims=["date"], coords={"date": df["Date"]})
     sim_da_plstm = xr.DataArray(df["PLSTM_Predicted"].values, dims=["date"], coords={"date": df["Date"]})
 
+    # metrics_dict = {
+    #     "HMS": calculate_all_metrics(obs_da, sim_da_hms),
+    #     "LSTM": calculate_all_metrics(obs_da, sim_da_lstm),
+    #     "Physics_Informed_LSTM": calculate_all_metrics(obs_da, sim_da_plstm),
+    # }
+
+    hms_metrics = calculate_all_metrics(obs_da, sim_da_hms)
+    hms_pbias_value = calculate_pbias(obs_da, sim_da_hms)
+    hms_metrics["PBIAS"] = hms_pbias_value
+    lstm_metrics = calculate_all_metrics(obs_da, sim_da_lstm)
+    lstm_pbias_value = calculate_pbias(obs_da, sim_da_lstm)
+    lstm_metrics["PBIAS"] = lstm_pbias_value
+    plstm_metrics = calculate_all_metrics(obs_da, sim_da_plstm)
+    plstm_pbias_value = calculate_pbias(obs_da, sim_da_plstm)
+    plstm_metrics["PBIAS"] = plstm_pbias_value
+       
     metrics_dict = {
-        "HMS": calculate_all_metrics(obs_da, sim_da_hms),
-        "LSTM": calculate_all_metrics(obs_da, sim_da_lstm),
-        "Physics_Informed_LSTM": calculate_all_metrics(obs_da, sim_da_plstm),
+        "HMS": hms_metrics,
+        "LSTM": lstm_metrics,
+        "Physics_Informed_LSTM": plstm_metrics,
     }
+
     metrics_df = pd.DataFrame(metrics_dict)
     metrics_df.to_csv(fName, index=True)
     print(f"[INFO] Wrote metrics CSV: {fName}")
