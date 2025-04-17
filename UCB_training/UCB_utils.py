@@ -34,56 +34,82 @@ def clean_df(df):
     return df
 
 
-def combinedPlot(lstm_results: Path, lstmPhysics_results: Path, HMS_results: Path, title: str,
-                 fName: str = "metrics.csv", timeseries_filename: str = None, plot_filename: str = None):
-    """Plot Observed, LSTM, Physics-LSTM, and HMS timeseries with Matplotlib,
-    and save metrics + optionally the figure.
-
-    Args:
-        lstm_results (Path): CSV with columns [Date, Observed, Predicted].
-        lstmPhysics_results (Path): CSV with columns [Date, Observed, Predicted].
-        HMS_results (Path): CSV with columns [Date, ...someHMS...].
-        title (str): Chart title.
-        fName (str): CSV filename for saving metrics (default: metrics.csv).
-        plot_filename (str): If given, saves the Matplotlib figure to e.g. 'myplot.png'.
-        :param timeseries_filename: If given, saves the timeseries data to a CSV file.
+def combinedPlot(lstm_results: Path,
+                 lstmPhysics_results: Path,
+                 HMS_results: Path,
+                 title: str,
+                 fName: str = "metrics.csv",
+                 timeseries_filename: str = None,
+                 plot_filename: str = None):
     """
+    Plot Observed, LSTM, Physics-LSTM, and HMS timeseries with Matplotlib,
+    and save metrics + optionally the figure.
+    """
+    # 1) Load and rename
     lstm_df = pd.read_csv(lstm_results).rename(columns={'Predicted': 'LSTM_Predicted'})
-    lstm_df['Date'] = pd.to_datetime(lstm_df['Date'])
-    lstm_df.loc[lstm_df['LSTM_Predicted'] < 0, 'LSTM_Predicted'] = 0
-
     physics_lstm_df = pd.read_csv(lstmPhysics_results).rename(columns={'Predicted': 'PLSTM_Predicted'})
-    physics_lstm_df['Date'] = pd.to_datetime(physics_lstm_df['Date'])
-
     physics_lstm_df.drop(columns=['Observed'], inplace=True, errors='ignore')
+
+    # 2) Clean up negative predictions
+    lstm_df['Date'] = pd.to_datetime(lstm_df['Date'])
+    physics_lstm_df['Date'] = pd.to_datetime(physics_lstm_df['Date'])
+    lstm_df.loc[lstm_df['LSTM_Predicted'] < 0, 'LSTM_Predicted'] = 0
     physics_lstm_df.loc[physics_lstm_df['PLSTM_Predicted'] < 0, 'PLSTM_Predicted'] = 0
 
+    print("[DEBUG - combinedPlot] => LSTM shape:", lstm_df.shape)
+    print("[DEBUG - combinedPlot] => LSTM columns:", lstm_df.columns.tolist())
+    print("[DEBUG - combinedPlot] => Physics LSTM shape:", physics_lstm_df.shape)
+    print("[DEBUG - combinedPlot] => Physics LSTM columns:", physics_lstm_df.columns.tolist())
+
+    # 3) Load & Clean HMS
     hms_df = pd.read_csv(HMS_results)
+    print("[DEBUG - combinedPlot] => raw HMS shape:", hms_df.shape)
     cleaned_hms_df = clean_df(hms_df)
-    cleaned_hms_df.rename(columns={cleaned_hms_df.columns[0]: 'HMS_Predicted'}, inplace=True)
+    print("[DEBUG - combinedPlot] => cleaned HMS shape:", cleaned_hms_df.shape)
+    if len(cleaned_hms_df.columns) > 0:
+        main_col = cleaned_hms_df.columns[0]
+        # rename first column => 'HMS_Predicted'
+        cleaned_hms_df.rename(columns={main_col: 'HMS_Predicted'}, inplace=True)
+
     cleaned_hms_df = cleaned_hms_df.reset_index().rename(columns={'date': 'Date'})
     cleaned_hms_df = cleaned_hms_df[['Date', 'HMS_Predicted']]
+    print("[DEBUG - combinedPlot] => final HMS shape:", cleaned_hms_df.shape)
 
-    df = (
-        lstm_df
-        .merge(cleaned_hms_df, how='right', on='Date')
-        .merge(physics_lstm_df, how='right', on='Date')
-    )
+    # 4) Merge => LSTM + HMS
+    print("[DEBUG - combinedPlot] => Merging LSTM with HMS [INNER JOIN] ...")
+    df_1 = lstm_df.merge(cleaned_hms_df, how='inner', on='Date')
+    print("[DEBUG - combinedPlot] => after LSTM/HMS merge => shape:", df_1.shape)
 
+    # 5) Merge => combined + Phys LSTM
+    print("[DEBUG - combinedPlot] => Merging with Phys-LSTM [INNER JOIN] ...")
+    df = df_1.merge(physics_lstm_df, how='inner', on='Date')
+    print("[DEBUG - combinedPlot] => after final merge => shape:", df.shape)
+
+    print("[DEBUG - combinedPlot] => columns:", df.columns.tolist())
+    print("[DEBUG - combinedPlot] => HEAD:\n", df.head(5))
+    print("[DEBUG - combinedPlot] => TAIL:\n", df.tail(5))
+    for c in df.columns:
+        print(f"[DEBUG - combinedPlot] => NaN count in '{c}' => {df[c].isna().sum()}")
+
+    # Ensure numeric
     df['Observed'] = pd.to_numeric(df['Observed'], errors='coerce')
     df['HMS_Predicted'] = pd.to_numeric(df['HMS_Predicted'], errors='coerce')
     df['LSTM_Predicted'] = pd.to_numeric(df['LSTM_Predicted'], errors='coerce')
     df['PLSTM_Predicted'] = pd.to_numeric(df['PLSTM_Predicted'], errors='coerce')
 
+    # Save timeseries if requested
     if timeseries_filename:
         df[['Date', 'Observed', 'HMS_Predicted', 'LSTM_Predicted',
             'PLSTM_Predicted']].to_csv(timeseries_filename, index=False)
+        print("[DEBUG - combinedPlot] => Wrote merged timeseries CSV =>", timeseries_filename)
 
+    # Convert to xarray
     obs_da = xr.DataArray(df['Observed'].values, dims=["date"], coords={"date": df['Date']})
     sim_da_hms = xr.DataArray(df['HMS_Predicted'].values, dims=["date"], coords={"date": df['Date']})
     sim_da_lstm = xr.DataArray(df['LSTM_Predicted'].values, dims=["date"], coords={"date": df['Date']})
     sim_da_plstm = xr.DataArray(df['PLSTM_Predicted'].values, dims=["date"], coords={"date": df['Date']})
 
+    # Compute metrics
     metrics = {
         "HMS": calculate_all_metrics(obs_da, sim_da_hms),
         "LSTM": calculate_all_metrics(obs_da, sim_da_lstm),
@@ -93,6 +119,7 @@ def combinedPlot(lstm_results: Path, lstmPhysics_results: Path, HMS_results: Pat
     metrics_df.to_csv(fName, index=True)
     print(f"[INFO] Wrote metrics CSV: {fName}")
 
+    # Plot
     plt.figure(figsize=(30, 10))
     plt.plot(df["Date"], df["Observed"], label='Observed', linewidth=2)
     plt.plot(df["Date"], df["HMS_Predicted"], label='HMS Prediction', linewidth=2, alpha=0.7)
@@ -104,12 +131,14 @@ def combinedPlot(lstm_results: Path, lstmPhysics_results: Path, HMS_results: Pat
     plt.title(title, fontsize=30)
     plt.legend(fontsize=25, loc="upper right")
     plt.grid(True, alpha=0.4)
-    plt.xlim(df['Date'].min(), df['Date'].max())
+    if not df["Date"].isna().all():
+        plt.xlim(df['Date'].min(), df['Date'].max())
     plt.tight_layout()
 
     if plot_filename:
         plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
         print(f"[INFO] Saved figure: {plot_filename}")
+
     plt.show()
 
     return plt, metrics_df
@@ -132,7 +161,7 @@ def fancyCombinedPlot(lstm_results: Path, lstmPhysics_results: Path, HMS_results
     cleaned_hms_df = cleaned_hms_df.reset_index().rename(columns={'date': 'Date'})
     cleaned_hms_df = cleaned_hms_df[['Date', 'HMS_Predicted']]
 
-    df = lstm_df.merge(cleaned_hms_df, how='right', on='Date').merge(physics_lstm_df, how='right', on='Date')
+    df = lstm_df.merge(cleaned_hms_df, how='inner', on='Date').merge(physics_lstm_df, how='inner', on='Date')
 
     df['Observed'] = pd.to_numeric(df['Observed'], errors='coerce')
     df['HMS_Predicted'] = pd.to_numeric(df['HMS_Predicted'], errors='coerce')

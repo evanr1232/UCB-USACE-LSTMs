@@ -9,36 +9,11 @@ from UCB_training.UCB_utils import clean_df
 from neuralhydrology.datasetzoo.basedataset import BaseDataset
 from neuralhydrology.utils.config import Config
 
-
 class RussianRiver(BaseDataset):
-    """To make this dataset available for model training, don't forget to add it to the `get_dataset()` function in 
-    'neuralhydrology.datasetzoo.__init__.py'
+    """Multi-basin, multi-timescale dataset loader for the Russian River region.
 
-    Parameters
-    ----------
-    cfg : Config
-        The run configuration.
-    is_train : bool 
-        Defines if the dataset is used for training or evaluating. If True (training), means/stds for each feature
-        are computed and stored to the run directory. If one-hot encoding is used, the mapping for the one-hot encoding 
-        is created and also stored to disk. If False, a `scaler` input is expected and similarly the `id_to_int` input
-        if one-hot encoding is used. 
-    period : {'train', 'validation', 'test'}
-        Defines the period for which the data will be loaded
-    basin : str, optional
-        If passed, the data for only this basin will be loaded. Otherwise the basin(s) are read from the appropriate
-        basin file, corresponding to the `period`.
-    additional_features : List[Dict[str, pd.DataFrame]], optional
-        List of dictionaries, mapping from a basin id to a pandas DataFrame. This DataFrame will be added to the data
-        loaded from the dataset, and all columns are available as 'dynamic_inputs', 'evolving_attributes' and
-        'target_variables'
-    id_to_int : Dict[str, int], optional
-        If the config argument 'use_basin_id_encoding' is True in the config and period is either 'validation' or 
-        'test', this input is required. It is a dictionary, mapping from basin id to an integer (the one-hot encoding).
-    scaler : Dict[str, Union[pd.Series, xarray.DataArray]], optional
-        If period is either 'validation' or 'test', this input is required. It contains the centering and scaling
-        for each feature and is stored to the run directory during training (train_data/train_data_scaler.yml).
-
+    If cfg.is_mts=True, merges daily.csv + hourly.csv + daily physics + hourly physics
+    for the given basin, upsampling daily data to hourly. Otherwise, single-frequency logic.
     """
 
     def __init__(self,
@@ -49,72 +24,98 @@ class RussianRiver(BaseDataset):
                  additional_features: List[Dict[str, pd.DataFrame]] = [],
                  id_to_int: Dict[str, int] = {},
                  scaler: Dict[str, Union[pd.Series, xarray.DataArray]] = {}):
-        # initialize parent class
         super(RussianRiver, self).__init__(cfg=cfg,
-                                              is_train=is_train,
-                                              period=period,
-                                              basin=basin,
-                                              additional_features=additional_features,
-                                              id_to_int=id_to_int,
-                                              scaler=scaler)
+                                           is_train=is_train,
+                                           period=period,
+                                           basin=basin,
+                                           additional_features=additional_features,
+                                           id_to_int=id_to_int,
+                                           scaler=scaler)
 
     def _load_basin_data(self, basin: str) -> pd.DataFrame:
-        """Load basin time series data
-        
-        This function is used to load the time series data (meteorological forcing, streamflow, etc.) and make available
-        as time series input for model training later on. Make sure that the returned dataframe is time-indexed.
-        
-        Parameters
-        ----------
-        basin : str
-            Basin identifier as string.
+        """Load daily and hourly data (and physics if needed) for the given basin, with debug prints."""
+        cfg_dict = self.cfg.as_dict()
+        if "is_mts_data" in cfg_dict and cfg_dict["is_mts_data"]:
+            mts_flag = True
+        else:
+            mts_flag = False
 
-        Returns
-        -------
-        pd.DataFrame
-            Time-indexed DataFrame, containing the time series data (e.g., forcings + discharge).
-        """
-        df = load_russian_river_data(self.cfg.data_dir, self.cfg.hourly) #daily or hourly df
-        if self.cfg.physics_informed:
-            physics_file = self.cfg.physics_data_file
-            if Path(physics_file).exists():
-                physics_df = load_hms_basin_data(physics_file, self.cfg.hourly)
-                df = pd.merge(df, physics_df, left_index=True, right_index=True, how='outer') #add physics columns if physics informed
-            else: raise FileNotFoundError(f"Physics data file not found: {physics_file}")
+        print(f"[DEBUG] => in _load_basin_data, cfg['is_mts_data'] = {mts_flag}")
+        if mts_flag:
+            daily_path = self.cfg.data_dir / "daily_mts.csv"
+            print(f"[DEBUG] => MTS: reading daily from {daily_path}")
+            daily_df = pd.read_csv(daily_path, low_memory=False)
+            print("[DEBUG] => daily_mts columns after read_csv =>", daily_df.columns.tolist())
+            daily_df = clean_df(daily_df)
+            print("[DEBUG] => columns AFTER clean_df_mts =>", daily_df.columns.tolist())
+            print("[DEBUG] => index AFTER clean_df_mts =>", daily_df.index)
+            daily_df = daily_df.resample("1H").ffill()
+            print("[DEBUG] => daily_df after resample('1H') => columns:", daily_df.columns.tolist())
 
+            hourly_path = self.cfg.data_dir / "hourly_mts.csv"
+            print(f"[DEBUG] => MTS: reading hourly from {hourly_path}")
+            hourly_df = pd.read_csv(hourly_path, low_memory=False)
+            print("[DEBUG] => hourly_mts columns after read_csv =>", hourly_df.columns.tolist())
+            hourly_df = clean_df(hourly_df)
+            print("[DEBUG] => hourly_df after clean_df => columns:", hourly_df.columns.tolist())
+
+            df = pd.merge(hourly_df, daily_df, how="outer", left_index=True, right_index=True)
+            print("[DEBUG] => after merging daily/hourly => df.columns =>", df.columns.tolist())
+
+            # If physics_informed => also merge basin_daily_mts.csv + basin_hourly_mts.csv
+            if self.cfg.physics_informed:
+                daily_phys_path = self.cfg.data_dir / f"{basin}_daily_mts.csv"
+                hourly_phys_path = self.cfg.data_dir / f"{basin}_hourly_mts.csv"
+
+                if daily_phys_path.exists():
+                    print(f"[DEBUG] => MTS: reading daily physics from {daily_phys_path}")
+                    daily_phys_df = pd.read_csv(daily_phys_path, low_memory=False)
+                    daily_phys_df = clean_df(daily_phys_df)
+                    daily_phys_df = daily_phys_df.resample("1H").ffill()
+                    df = pd.merge(df, daily_phys_df, how="outer", left_index=True, right_index=True)
+                    print("[DEBUG] => after merging daily_phys => df.columns =>", df.columns.tolist())
+
+                if hourly_phys_path.exists():
+                    print(f"[DEBUG] => MTS: reading hourly physics from {hourly_phys_path}")
+                    hourly_phys_df = pd.read_csv(hourly_phys_path, low_memory=False)
+                    hourly_phys_df = clean_df(hourly_phys_df)
+                    df = pd.merge(df, hourly_phys_df, how="outer", left_index=True, right_index=True)
+                    print("[DEBUG] => after merging hourly_phys => df.columns =>", df.columns.tolist())
+
+            print("[DEBUG] => final MTS df.columns =>", df.columns.tolist())
+            return df
+
+        else:
+            return self._load_single_freq(basin)
+
+    def _load_single_freq(self, basin: str) -> pd.DataFrame:
+        """Load single-frequency data (daily or hourly)."""
+        if self.cfg.hourly:
+            path = self.cfg.data_dir / "hourly.csv"
+            print(f"[DEBUG] => single-freq: reading HOURLY from {path}")
+        else:
+            path = self.cfg.data_dir / "daily.csv"
+            print(f"[DEBUG] => single-freq: reading DAILY from {path}")
+
+        df = pd.read_csv(path, low_memory=False)
+        print("[DEBUG] => single-freq columns after read_csv =>", df.columns.tolist())
+        df = clean_df(df)
+
+        if self.cfg.physics_informed and self.cfg.physics_data_file:
+            physics_path = Path(self.cfg.physics_data_file)
+            print(f"[DEBUG] => single-freq: reading PHYSICS from {physics_path}")
+            phys_df = pd.read_csv(physics_path, low_memory=False)
+            print("[DEBUG] => physics columns after read_csv =>", phys_df.columns.tolist())
+            phys_df = clean_df(phys_df)
+            df = pd.merge(df, phys_df, how='outer', left_index=True, right_index=True)
+            print("[DEBUG] => after merging single-freq physics => df.columns =>", df.columns.tolist())
+        else:
+            print(f"[WARNING] => Provided physics_data_file does not exist")
         return df
-            
-
     def _load_attributes(self) -> pd.DataFrame:
-        """Load dataset attributes
-        
-        This function is used to load basin attribute data (e.g. CAMELS catchments attributes) as a basin-indexed 
-        dataframe with features in columns.
-        
-        Returns
-        -------
-        pd.DataFrame
-            Basin-indexed DataFrame, containing the attributes as columns.
-        """
+        # If you have static basin attributes, load them here
         return load_russian_river_attributes(self.cfg.data_dir)
-    
-def load_hms_basin_data(physics_data_file: Path, hourly: bool) -> pd.DataFrame:
-    # CHANGE TO USE clean_daily and clean_hourly
-    logging.info(f"Loading data from file: {physics_data_file}, hourly: {hourly}")
-    df = pd.read_csv(physics_data_file, low_memory=False)
-    cleaned_df = clean_df(df)
-    return cleaned_df
-
-def load_russian_river_data(data_dir: Path, hourly: bool) -> pd.DataFrame:  
-    if hourly:
-        file_path = data_dir / 'hourly.csv'
-    else:
-        file_path = data_dir / 'daily.csv'
-    df = pd.read_csv(file_path, low_memory=False)
-    cleaned_df = clean_df(df)
-    return cleaned_df
 
 def load_russian_river_attributes(data_dir: Path) -> pd.DataFrame:
-    # look into whether we need these or not
-    return None
-
+    # if no static attributes are needed, just return None or empty DataFrame
+    return pd.DataFrame()

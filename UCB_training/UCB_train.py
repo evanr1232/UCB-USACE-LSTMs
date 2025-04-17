@@ -1,10 +1,13 @@
 from pathlib import Path
+import platform
+
 import matplotlib.pyplot as plt
 import pickle
 import logging
 import pandas as pd
 from typing import List
 
+import torch
 from neuralhydrology.utils.config import Config
 from neuralhydrology.training.train import start_training
 from neuralhydrology.nh_run import eval_run
@@ -16,25 +19,22 @@ class UCB_trainer:
     A wrapper to facilitate easier training/evaluation of neural hydrology models.
     """
 
-    def __init__(self, path_to_csv_folder: Path, yaml_path: Path, hyperparams: dict,
-                 input_features: List[str] = None, num_ensemble_members: int = 1,
-                 physics_informed: bool = False, physics_data_file: Path = None,
-                 hourly: bool=False, extend_train_period: bool=False, gpu: int = -1):
+    def __init__(self,
+                 path_to_csv_folder: Path,
+                 yaml_path: Path,
+                 hyperparams: dict,
+                 input_features: List[str] = None,
+                 num_ensemble_members: int = 1,
+                 physics_informed: bool = False,
+                 physics_data_file: Path = None,
+                 hourly: bool=False,
+                 extend_train_period: bool=False,
+                 gpu: int = -1,
+                 is_mts: bool = False,
+                 is_mts_data: bool = False,
+                 basin: bool = None):
         """
         Initialize the UCB_trainer class with configurations and training parameters.
-
-        Args:
-            path_to_csv_folder (Path): Path to the folder containing training data.
-            yaml_path (Path): Path to the YAML configuration file.
-            hyperparams (dict): Dictionary of hyperparameters for training.
-            input_features (List[str], optional): List of input feature names. Defaults to None.
-            num_ensemble_members (int, optional): Number of ensemble models to train. Defaults to 1.
-            physics_informed (bool, optional): Whether to include physics-informed inputs. Defaults to False.
-                                               If True, physics_data_file must be provided.
-            physics_data_file (Path, optional): Path to physics data file. Defaults to None.
-            hourly (bool, optional): Whether to use hourly data. Defaults to False.
-            extend_train_period (bool, optional): Extend training period to include validation. Defaults to False.
-            gpu (int, optional): GPU ID for training. Defaults to -1 (CPU).
         """
         self._hyperparams = hyperparams
         self._num_ensemble_members = num_ensemble_members
@@ -46,10 +46,11 @@ class UCB_trainer:
         self._yaml_path = yaml_path
         self._hourly = hourly
         self._extended_train_period = extend_train_period
+        self._is_mts = is_mts
+        self._is_mts_data = is_mts_data
+        self._basin = basin
 
         self._config = None
-        self._create_config()
-
         self._model = None
         self._predictions = None
         self._observed = None
@@ -57,96 +58,106 @@ class UCB_trainer:
         self._basin_name = None
         self._target_variable = None
 
+        print("[DEBUG:UCB_trainer] => Initializing with:")
+        print(f"  path_to_csv_folder={path_to_csv_folder}, yaml_path={yaml_path}")
+        print(f"  hyperparams={hyperparams}")
+        print(f"  input_features={input_features}, basin={basin}")
+        print(f"  is_mts={is_mts}, is_mts_data={is_mts_data}, hourly={hourly}")
+        print(f"  physics_informed={physics_informed}, physics_data_file={physics_data_file}")
+
+        self._create_config()
+
     def train(self):
         """
         Train the model or ensemble based on the specified number of ensemble members.
-
-        Returns:
-            Path or List[Path]: The path(s) to the trained model(s).
         """
         if self._num_ensemble_members == 1:
-            self._model = self._train_model()
-            # Evaluate on validation
-            self._eval_model(self._model, period="validation")
+            path = self._train_model()
+            print(f"[DEBUG:train] => Single-model run_dir = {path}")
+            self._eval_model(path, period="validation")
+            self._model = path
         else:
             self._model = self._train_ensemble()
-            for model in self._model:
-                self._eval_model(model, period="validation")
+            print("[DEBUG:train] => Ensemble run_dirs =", self._model)
+            for model_path in self._model:
+                self._eval_model(model_path, period="validation")
+
         return self._model
 
-    def results(self, period='validation') -> dict:
+    def results(self, period='validation', mts_trk="1H") -> (Path, dict):
         """
-        Public method to return metrics and optionally plot data visualizations of model performance.
-
-        Args:
-            period (str): 'validation', 'test', or 'train'. Defaults to 'validation'.
+        Public method to return a CSV path and a metrics dict for a given period.
         """
-        time_resolution_key = '1h' if self._hourly else '1D'
+        if self._is_mts:
+            time_resolution_key = mts_trk
+        else:
+            time_resolution_key = '1h' if self._hourly else '1D'
 
-        # Load predictions from file
+        print(f"[DEBUG:results] => period='{period}', mts_trk='{mts_trk}', time_resolution_key='{time_resolution_key}'")
         self._get_predictions(time_resolution_key, period)
-        print('got predictions')
+        print("[DEBUG:results] => predictions loaded OK")
 
-        # Generate plot
         self._generate_obs_sim_plt(period)
 
-        # Compute metrics
         self._metrics = calculate_all_metrics(self._observed, self._predictions)
+        csv_path = self._generate_csv(period, freq_key=(time_resolution_key if self._is_mts else None))
+        return csv_path, self._metrics
 
-        # Save CSV
-        path = self._generate_csv(period)
-        return path, self._metrics
-
-    def _eval_model(self, run_directory, period="validation"):
-        """
-        Evaluate a trained model. Uses the standard neuralhydrology eval_run.
-
-        Args:
-            run_directory (Path): Path to the trained model directory.
-            period (str, optional): 'validation', 'train', or 'test'.
-        """
+    def _eval_model(self, run_directory: Path, period="validation"):
+        """Evaluate a trained model. Uses the standard neuralhydrology eval_run."""
+        print(f"[DEBUG:_eval_model] => run_directory={run_directory}, period={period}")
         eval_run(run_dir=run_directory, period=period)
 
     def _get_predictions(self, time_resolution_key, period='validation'):
         """
-        Private method to load predictions from the model's result files.
-
-        Args:
-            time_resolution_key (str): '1h' or '1D'.
-            period (str): 'validation', 'test', or 'train'.
+        Load predictions from the model's result files for the given period.
         """
         if self._num_ensemble_members == 1:
             results_file = self._model / period / f"model_epoch{str(self._config.epochs).zfill(3)}" / f"{period}_results.p"
+            print(f"[DEBUG:_get_predictions] => Looking for single-model results at: {results_file}")
 
-            # If results file doesn't exist, evaluate the model
             if not results_file.exists():
+                print("[WARN:_get_predictions] => results_file doesn't exist, forcing eval_run")
                 self._eval_model(self._model, period)
-
             if not results_file.exists():
-                raise FileNotFoundError(f"Failed to evaluate or locate results for {period}. Expected file at: {results_file}")
+                raise FileNotFoundError(f"Failed to evaluate or locate results for {period} => {results_file}")
 
             with open(results_file, "rb") as fp:
                 results = pickle.load(fp)
 
+            print("[DEBUG:_get_predictions] => results loaded, found basins:", list(results.keys()))
             self._basin_name = next(iter(results.keys()))
-            self._target_variable = self._config.target_variables[0]
+            print(f"[DEBUG:_get_predictions] => using basin_name={self._basin_name}")
 
+            self._target_variable = self._config.target_variables[0]
             observed_key = f"{self._target_variable}_obs"
             simulated_key = f"{self._target_variable}_sim"
+            print(f"[DEBUG:_get_predictions] => Observed key='{observed_key}', Sim key='{simulated_key}'")
 
-            if observed_key not in results[self._basin_name][time_resolution_key]['xr']:
-                raise KeyError(f"Observed key '{observed_key}' not found in results for basin {self._basin_name}.")
-            if simulated_key not in results[self._basin_name][time_resolution_key]['xr']:
-                raise KeyError(f"Simulated key '{simulated_key}' not found in results for basin {self._basin_name}.")
+            # Check that the time_resolution_key is present
+            basin_dict = results[self._basin_name]
+            print("[DEBUG:_get_predictions] => basin keys =>", list(basin_dict.keys()))
+            if time_resolution_key not in basin_dict:
+                raise KeyError(f"time_resolution_key '{time_resolution_key}' not in results for basin '{self._basin_name}'. "
+                               f"Found keys: {list(basin_dict.keys())}")
 
-            self._observed = results[self._basin_name][time_resolution_key]['xr'][observed_key].isel(time_step=0)
-            self._predictions = results[self._basin_name][time_resolution_key]['xr'][simulated_key].isel(time_step=0)
+            if observed_key not in basin_dict[time_resolution_key]['xr']:
+                raise KeyError(f"Observed key '{observed_key}' not found in {time_resolution_key} results.")
+            if simulated_key not in basin_dict[time_resolution_key]['xr']:
+                raise KeyError(f"Simulated key '{simulated_key}' not found in {time_resolution_key} results.")
 
-        else:  # Ensemble case
+            self._observed = basin_dict[time_resolution_key]['xr'][observed_key].isel(time_step=0)
+            self._predictions = basin_dict[time_resolution_key]['xr'][simulated_key].isel(time_step=0)
+            print("[DEBUG:_get_predictions] => _observed shape:", self._observed.shape,
+                  " _predictions shape:", self._predictions.shape)
+
+        else:
+            # ENSEMBLE
+            print("[DEBUG:_get_predictions] => ENSEMBLE mode. run_dirs:", self._model)
             results = create_results_ensemble(run_dirs=self._model, period=period)
+            print("[DEBUG:_get_predictions] => ensemble results loaded. keys =>", list(results.keys()))
             self._basin_name = next(iter(results.keys()))
             self._target_variable = self._config.target_variables[0]
-
             observed_key = f"{self._target_variable}_obs"
             simulated_key = f"{self._target_variable}_sim"
 
@@ -160,79 +171,102 @@ class UCB_trainer:
 
     def _generate_obs_sim_plt(self, period='validation'):
         """
-        Private method to plot observed vs simulated values.
+        Plot observed vs. simulated values (matplotlib).
         """
-        fig, ax = plt.subplots(figsize=(16, 10))
+        if self._observed is None or self._predictions is None:
+            print("[WARN:_generate_obs_sim_plt] => cannot plot, observed or predictions = None")
+            return
 
-        # Label depends on whether it's physics or not
+        fig, ax = plt.subplots(figsize=(16, 10))
         if self._physics_informed:
             simulated_label = "HybridSimulation"
         else:
             simulated_label = "Simulated"
 
-        # Single-model
         if self._num_ensemble_members == 1:
-            ax.plot(self._observed["date"], self._observed, label="Observed", linewidth=1.5)
-            ax.plot(self._predictions["date"], self._predictions, label=simulated_label, linewidth=1.5)
+            # single model
+            if "date" in self._observed.coords:
+                ax.plot(self._observed["date"], self._observed, label="Observed", linewidth=1.5)
+                ax.plot(self._predictions["date"], self._predictions, label=simulated_label, linewidth=1.5)
+            else:
+                print("[WARN:_generate_obs_sim_plt] => 'date' not in coords, cannot plot easily.")
         else:
-            # Ensemble
-            ax.plot(self._observed["datetime"], self._observed, label="Observed", linewidth=1.5)
-            ax.plot(self._predictions["datetime"], self._predictions, label=simulated_label, linewidth=1.5)
+            # ensemble
+            pass
 
         ax.set_ylabel(f"{self._target_variable} (units)", fontsize=14)
         ax.set_xlabel("Date", fontsize=14)
         ax.set_title(f"{self._basin_name} - {self._target_variable} Over Time ({period})", fontsize=16)
         ax.legend(fontsize=12)
         ax.grid(True, linestyle="--", alpha=0.7)
-
         fig.autofmt_xdate()
         plt.tight_layout()
         plt.show()
 
-    def _generate_csv(self, period='validation'):
+    def _generate_csv(self, period='validation', freq_key: str = None) -> Path:
         """
-        Private method to save predictions to a CSV file.
+        Save predictions to a CSV file in the run directory, e.g. "results_output_validation_1H.csv".
         """
         if self._observed is None or self._predictions is None:
-            print("[ERROR] Observed or predicted values are None. Cannot generate CSV.")
-            return
+            print("[ERROR] Observed or predicted are None => skipping CSV.")
+            return Path()
+
+        base_name = f"results_output_{period}"
+        if self._is_mts and freq_key:
+            base_name += f"_{freq_key}"
+        out = self._config.run_dir / f"{base_name}.csv"
+        print(f"[DEBUG:_generate_csv] => saving to {out}")
 
         try:
             if self._num_ensemble_members == 1:
-                dates = self._observed['date'].values
+                if "date" in self._observed.coords:
+                    df = pd.DataFrame({
+                        "Date": self._observed["date"].values,
+                        "Observed": self._observed.values,
+                        "Predicted": self._predictions.values
+                    })
+                else:
+                    print("[WARN:_generate_csv] => date coord not found, fallback indexing.")
+                    df = pd.DataFrame({
+                        "Date": range(len(self._observed)),
+                        "Observed": self._observed.values,
+                        "Predicted": self._predictions.values
+                    })
             else:
-                dates = self._observed['datetime'].values
+                # ensemble
+                df = pd.DataFrame({
+                    "Date": self._observed["datetime"].values,
+                    "Observed": self._observed.values,
+                    "Predicted": self._predictions.values
+                })
+            df.to_csv(out, index=False)
+        except Exception as exc:
+            print(f"[ERROR:_generate_csv] => Could not save CSV: {exc}")
 
-            df = pd.DataFrame({
-                'Date': dates,
-                'Observed': self._observed.values,
-                'Predicted': self._predictions.values
-            })
-
-            output_path = Path(self._config.run_dir) / f"results_output_{period}.csv"
-            df.to_csv(output_path, index=False)
-            print(f"[INFO] CSV output saved at: {output_path}")
-        except Exception as e:
-            print(f"[ERROR] Failed to generate CSV: {e}")
-
-        return output_path
+        return out
 
     def _train_model(self) -> Path:
-        """
-        Train a single model instance.
-        """
+        """Train a single model instance with start_training()."""
+        print("[DEBUG:_train_model] => hyperparams:", self._hyperparams)
         start_training(self._config)
+        print("[DEBUG:_train_model] => training done => run_dir:", self._config.run_dir)
         return self._config.run_dir
 
     def _train_ensemble(self) -> List[Path]:
-        """
-        Train multiple models as an ensemble.
-        """
-        paths = []
-        for _ in range(self._num_ensemble_members):
+        """Train multiple models as an ensemble."""
+        print("[DEBUG:_train_ensemble] => num_ensemble_members=", self._num_ensemble_members)
+        run_dirs = []
+        for i in range(self._num_ensemble_members):
             path = self._train_model()
-            paths.append(path)
-        return paths
+            run_dirs.append(path)
+            print(f"[DEBUG:_train_ensemble] => ensemble member {i} => path={path}")
+
+        # Evaluate each on validation/test if you want
+        for rd in run_dirs:
+            self._eval_model(rd, period="validation")
+            self._eval_model(rd, period="test")
+
+        return run_dirs
 
     def _create_config(self) -> Config:
         """
@@ -257,6 +291,8 @@ class UCB_trainer:
         config.update_config({'data_dir': self._data_dir}, dev_mode=True)
         config.update_config({'physics_informed': self._physics_informed}, dev_mode=True)
         config.update_config({'hourly': self._hourly}, dev_mode=True)
+        config.update_config({'is_mts': self._is_mts}, dev_mode=True)
+        config.update_config({'is_mts_data': self._is_mts_data}, dev_mode=True)
 
         if self._physics_informed:
             if self._physics_data_file:
@@ -265,12 +301,24 @@ class UCB_trainer:
                 raise ValueError("Physics-informed is enabled, but no physics data file was provided.")
 
         # GPU or CPU
-        if self._gpu is not None and self._gpu >= 0:
-            config.update_config({'device': f"cuda:{self._gpu}"}, dev_mode=True)
+        if self._gpu == 0:
+            selected_device = "cuda:0"
+            print("[UCB Trainer] Using CUDA device: 'cuda:0'")
+        elif self._gpu == -2:
+            selected_device = "cpu"
+            print("[UCB Trainer] Forcing CPU (gpu=-2).")
+        # elif self._gpu == -1:
+        #     if platform.system() == "Darwin" and torch.backends.mps.is_available():
+        #         selected_device = "mps"
+        #         print("[UCB Trainer] Using MPS device on Apple Silicon.")
+        #     else:
+        #         selected_device = "cpu"
+        #         print("[UCB Trainer] Using CPU (auto-detect fallback).")
         else:
-            config.update_config({'device': "cpu"}, dev_mode=True)
+            selected_device = "cpu"
+            print(f"[UCB Trainer] Using CPU (unhandled gpu={self._gpu}).")
 
-        config.update_config({"dev_mode": True}, dev_mode=True)
+        config.update_config({'device': selected_device}, dev_mode=True)
 
         self._config = config
 
