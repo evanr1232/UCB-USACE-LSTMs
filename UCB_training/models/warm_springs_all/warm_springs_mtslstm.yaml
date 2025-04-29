@@ -1,0 +1,104 @@
+# --- Experiment Configs -----------------------------------------------------
+experiment_name: testing_run
+
+train_basin_file: calpella
+validation_basin_file: calpella
+test_basin_file: calpella
+
+train_start_date: "01/10/1994"
+train_end_date: "30/09/2002"
+validation_start_date: "01/10/2002"
+validation_end_date: "30/09/2005"
+test_start_date: "01/10/2005"
+test_end_date: "30/09/2009"
+
+# You can also override the device in code if desired; defaulting to CPU or GPU here
+device: cuda:0
+
+# If not using physics, these are placeholders
+physics_informed: false
+physics_data_file: null
+
+# --- Validation Configuration ----------------------------------------------
+validate_every: 5
+validate_n_random_basins: 1
+save_validation_results: True
+
+metrics:
+  - NSE
+  - MSE
+
+# --- Model Configuration: MTS-LSTM ------------------------------------------
+model: mtslstm
+shared_mtslstm: false
+transfer_mtslstm_states:
+  h: linear
+  c: linear
+
+use_frequencies:
+  - 1H
+  - 1D
+
+head: regression
+output_activation: linear
+
+# LSTM cell size, dropout, etc.
+hidden_size: 64
+initial_forget_bias: 3
+output_dropout: 0.5
+
+# --- Training Configuration -------------------------------------------------
+optimizer: Adam
+loss: NSE
+learning_rate:
+  0: 1e-2
+  30: 5e-3
+  40: 1e-3
+
+batch_size: 64
+epochs: 32
+clip_gradient_norm: 1
+
+predict_last_n:
+  1D: 1
+  1H: 24
+
+seq_length:
+  1D: 90
+  1H: 336
+
+log_interval: 16
+log_tensorboard: True
+log_n_figures: 1
+save_weights_every: 16
+
+# --- Data Configuration -----------------------------------------------------
+dataset: russian_river
+data_dir: "F:/Dino/UCB-USACE-LSTMs/data/updated_russian_river_folder/"
+dev_mode: True
+
+
+dynamic_inputs:
+  1D:
+    - daily_EF RUSSIAN 20 ET-POTENTIAL RUN:BASIN AVERAGE 60 YR
+    - daily_EF RUSSIAN 20 PRECIP-INC SCREENED
+    - daily_POTTER VALLEY CA FLOW USGS_ADJUSTED
+    - daily_UKIAH CA HUMIDITY USAF-NOAA
+    - daily_UKIAH CA SOLAR RADIATION USAF-NOAA
+    - daily_UKIAH CA TEMPERATURE USAF-NOAA
+    - daily_UKIAH CA WINDSPEED USAF-NOAA
+
+  1H:
+    - hourly_EF RUSSIAN 20 ET-POTENTIAL RUN:BASIN AVERAGE 60 YR
+    - hourly_EF RUSSIAN 20 PRECIP-INC SCREENED
+    - hourly_POTTER VALLEY CA FLOW USGS_ADJUSTED
+    - hourly_UKIAH CA HUMIDITY USAF-NOAA
+    - hourly_UKIAH CA SOLAR RADIATION USAF-NOAA
+    - hourly_UKIAH CA TEMPERATURE USAF-NOAA
+    - hourly_UKIAH CA WINDSPEED USAF-NOAA
+
+target_variables:
+  - hourly_NR CALPELLA FLOW COE CPL
+
+clip_targets_to_zero:
+  - hourly_NR CALPELLA FLOW COE CPL

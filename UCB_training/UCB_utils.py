@@ -10,27 +10,59 @@ from neuralhydrology.evaluation.metrics import calculate_all_metrics
 
 
 def clean_df(df):
-    # Clean columns/rows
-    df.columns = df.iloc[0]
-    df = df[3:]
-    df.columns = df.columns.str.strip()
-    df = df.drop(columns=['Ordinate'])
-    df = df.rename(columns={'Date': 'Day', 'Time': 'Time'})
+    # EXTRA DEBUG: stepwise debug prints
+    print("\n[DEBUG:clean_df] => initial shape:", df.shape)
+    print("[DEBUG:clean_df] => HEAD(5):\n", df.head(5))
 
-    # Increment the date by 1 day where Time is '24:00:00' and replace '24:00:00' with '00:00:00'
+    df.columns = df.iloc[0]
+    print("[DEBUG:clean_df] => After df.columns = df.iloc[0], shape:", df.shape)
+    print("[DEBUG:clean_df] => HEAD(5):\n", df.head(5))
+
+    df = df[3:]
+    print("[DEBUG:clean_df] => After df = df[3:], shape:", df.shape)
+    print("[DEBUG:clean_df] => HEAD(5):\n", df.head(5))
+
+    df.columns = df.columns.str.strip()
+    if 'Ordinate' in df.columns:
+        df = df.drop(columns=['Ordinate'])
+        print("[DEBUG:clean_df] => Dropped 'Ordinate', shape:", df.shape)
+
+    # rename date/time
+    if 'Date' in df.columns:
+        df = df.rename(columns={'Date': 'Day'})
+    if 'Time' not in df.columns and 'time' in df.columns:
+        df = df.rename(columns={'time': 'Time'})
+
+    print("[DEBUG:clean_df] => Columns after rename date/time:", df.columns.tolist())
+
+    # 24:00:00 fix
     mask = df['Time'] == '24:00:00'
-    df.loc[mask, 'Day'] = (pd.to_datetime(df.loc[mask, 'Day'], format='%d-%b-%y') + pd.Timedelta(days=1)).dt.strftime(
-        '%d-%b-%y')
+    count_24hr = mask.sum()
+    if count_24hr > 0:
+        print(f"[DEBUG:clean_df] => Found {count_24hr} rows with '24:00:00'")
+    df.loc[mask, 'Day'] = (pd.to_datetime(df.loc[mask, 'Day'], format='%d-%b-%y') + pd.Timedelta(days=1)) \
+        .dt.strftime('%d-%b-%y')
     df['Time'] = df['Time'].replace('24:00:00', '00:00:00')
 
-    # Combine 'Day' and 'Time' columns to create a new 'date' column, make sure duplicated columns are dropped
+    # new date col
     df['date'] = pd.to_datetime(df['Day'], format='%d-%b-%y') + pd.to_timedelta(df['Time'])
-    df.dropna(subset=['date'], inplace=True)
-    df = df.loc[:, ~df.columns.duplicated(keep=False)]
-    df.set_index('date', inplace=True)
+    print("[DEBUG:clean_df] => After creating 'date', shape:", df.shape)
+    print("[DEBUG:clean_df] => HEAD(5):\n", df.head(5))
 
-    # Drop 'Day' and 'Time' columns
-    df.drop(columns=['Day', 'Time'], inplace=True)
+    df.dropna(subset=['date'], inplace=True)
+    print("[DEBUG:clean_df] => After dropna on 'date', shape:", df.shape)
+
+    df = df.loc[:, ~df.columns.duplicated(keep=False)]
+    print("[DEBUG:clean_df] => After dropping duplicate cols, shape:", df.shape)
+
+    df.set_index('date', inplace=True)
+    if 'Day' in df.columns:
+        df.drop(columns=['Day'], inplace=True)
+    if 'Time' in df.columns:
+        df.drop(columns=['Time'], inplace=True)
+    print("[DEBUG:clean_df] => Final shape after set_index & drop Day/Time =>", df.shape)
+    print("[DEBUG:clean_df] => HEAD(5):\n", df.head(5), "\n")
+
     return df
 
 
@@ -365,7 +397,7 @@ def fancyCombinedPlotFromDf(
 def open_tensorboard(logdir: str, port: int = 6006):
     """
     Opens TensorBoard and display logs.
-    
+
     Args:
         logdir (str): Path to the directory containing TensorBoard event files.
         port (int): Port to host TensorBoard on (default: 6006).

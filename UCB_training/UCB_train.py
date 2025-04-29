@@ -58,6 +58,7 @@ class UCB_trainer:
         self._basin_name = None
         self._target_variable = None
 
+        # EXTRA DEBUG: Path details
         print("[DEBUG:UCB_trainer] => Initializing with:")
         print(f"  path_to_csv_folder={path_to_csv_folder}, yaml_path={yaml_path}")
         print(f"  hyperparams={hyperparams}")
@@ -113,6 +114,7 @@ class UCB_trainer:
         Load predictions from the model's result files for the given period.
         """
         if self._num_ensemble_members == 1:
+            # Single-model
             results_file = self._model / period / f"model_epoch{str(self._config.epochs).zfill(3)}" / f"{period}_results.p"
             print(f"[DEBUG:_get_predictions] => Looking for single-model results at: {results_file}")
 
@@ -134,12 +136,29 @@ class UCB_trainer:
             simulated_key = f"{self._target_variable}_sim"
             print(f"[DEBUG:_get_predictions] => Observed key='{observed_key}', Sim key='{simulated_key}'")
 
-            # Check that the time_resolution_key is present
+            # Dump aggregator frequency keys/time coords
+            print("[DEBUG:_get_predictions] => Dumping aggregator coordinate information...")
             basin_dict = results[self._basin_name]
             print("[DEBUG:_get_predictions] => basin keys =>", list(basin_dict.keys()))
             if time_resolution_key not in basin_dict:
-                raise KeyError(f"time_resolution_key '{time_resolution_key}' not in results for basin '{self._basin_name}'. "
-                               f"Found keys: {list(basin_dict.keys())}")
+                raise KeyError(
+                    f"time_resolution_key '{time_resolution_key}' not in results for basin '{self._basin_name}'. "
+                    f"Found keys: {list(basin_dict.keys())}"
+                )
+
+            for freq_key_in_dict in basin_dict.keys():
+                print(f"   [DEBUG:_get_predictions] => freq_key = {freq_key_in_dict}")
+                if "xr" in basin_dict[freq_key_in_dict]:
+                    da_keys = list(basin_dict[freq_key_in_dict]["xr"].keys())
+                    print(f"       data array keys = {da_keys}")
+                    for da_key in da_keys:
+                        da = basin_dict[freq_key_in_dict]["xr"][da_key]
+                        if "date" in da.coords:
+                            print(f"       => {da_key} has {da.coords['date'].shape[0]} timesteps; ")
+                            print("          first 3 timestamps =", da.coords["date"].values[:3])
+                            print("          last 3 timestamps  =", da.coords["date"].values[-3:])
+                else:
+                    print(f"       => No 'xr' key in basin_dict[{freq_key_in_dict}].")
 
             if observed_key not in basin_dict[time_resolution_key]['xr']:
                 raise KeyError(f"Observed key '{observed_key}' not found in {time_resolution_key} results.")
@@ -152,7 +171,7 @@ class UCB_trainer:
                   " _predictions shape:", self._predictions.shape)
 
         else:
-            # ENSEMBLE
+            # Ensemble
             print("[DEBUG:_get_predictions] => ENSEMBLE mode. run_dirs:", self._model)
             results = create_results_ensemble(run_dirs=self._model, period=period)
             print("[DEBUG:_get_predictions] => ensemble results loaded. keys =>", list(results.keys()))
@@ -218,8 +237,13 @@ class UCB_trainer:
         print(f"[DEBUG:_generate_csv] => saving to {out}")
 
         try:
+            # Extra debug
             if self._num_ensemble_members == 1:
                 if "date" in self._observed.coords:
+                    obs_times = self._observed["date"].values
+                    sim_times = self._predictions["date"].values
+                    print("[DEBUG:_generate_csv] => aggregator daily time coords (observed) => first 5:", obs_times[:5])
+                    print("[DEBUG:_generate_csv] => aggregator daily time coords (simulated) => first 5:", sim_times[:5])
                     df = pd.DataFrame({
                         "Date": self._observed["date"].values,
                         "Observed": self._observed.values,
@@ -233,12 +257,12 @@ class UCB_trainer:
                         "Predicted": self._predictions.values
                     })
             else:
-                # ensemble
                 df = pd.DataFrame({
                     "Date": self._observed["datetime"].values,
                     "Observed": self._observed.values,
                     "Predicted": self._predictions.values
                 })
+
             df.to_csv(out, index=False)
         except Exception as exc:
             print(f"[ERROR:_generate_csv] => Could not save CSV: {exc}")
@@ -307,13 +331,6 @@ class UCB_trainer:
         elif self._gpu == -2:
             selected_device = "cpu"
             print("[UCB Trainer] Forcing CPU (gpu=-2).")
-        # elif self._gpu == -1:
-        #     if platform.system() == "Darwin" and torch.backends.mps.is_available():
-        #         selected_device = "mps"
-        #         print("[UCB Trainer] Using MPS device on Apple Silicon.")
-        #     else:
-        #         selected_device = "cpu"
-        #         print("[UCB Trainer] Using CPU (auto-detect fallback).")
         else:
             selected_device = "cpu"
             print(f"[UCB Trainer] Using CPU (unhandled gpu={self._gpu}).")
