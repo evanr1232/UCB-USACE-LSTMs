@@ -11,21 +11,21 @@ from neuralhydrology.evaluation.metrics import calculate_all_metrics
 
 def clean_df(df):
     # EXTRA DEBUG: stepwise debug prints
-    print("\n[DEBUG:clean_df] => initial shape:", df.shape)
-    print("[DEBUG:clean_df] => HEAD(5):\n", df.head(5))
+    # print("\n[DEBUG:clean_df] => initial shape:", df.shape)
+    # print("[DEBUG:clean_df] => HEAD(5):\n", df.head(5))
 
     df.columns = df.iloc[0]
-    print("[DEBUG:clean_df] => After df.columns = df.iloc[0], shape:", df.shape)
-    print("[DEBUG:clean_df] => HEAD(5):\n", df.head(5))
+    # print("[DEBUG:clean_df] => After df.columns = df.iloc[0], shape:", df.shape)
+    # print("[DEBUG:clean_df] => HEAD(5):\n", df.head(5))
 
     df = df[3:]
-    print("[DEBUG:clean_df] => After df = df[3:], shape:", df.shape)
-    print("[DEBUG:clean_df] => HEAD(5):\n", df.head(5))
+    # print("[DEBUG:clean_df] => After df = df[3:], shape:", df.shape)
+    # print("[DEBUG:clean_df] => HEAD(5):\n", df.head(5))
 
     df.columns = df.columns.str.strip()
     if 'Ordinate' in df.columns:
         df = df.drop(columns=['Ordinate'])
-        print("[DEBUG:clean_df] => Dropped 'Ordinate', shape:", df.shape)
+        # print("[DEBUG:clean_df] => Dropped 'Ordinate', shape:", df.shape)
 
     # rename date/time
     if 'Date' in df.columns:
@@ -33,7 +33,7 @@ def clean_df(df):
     if 'Time' not in df.columns and 'time' in df.columns:
         df = df.rename(columns={'time': 'Time'})
 
-    print("[DEBUG:clean_df] => Columns after rename date/time:", df.columns.tolist())
+    # print("[DEBUG:clean_df] => Columns after rename date/time:", df.columns.tolist())
 
     # 24:00:00 fix
     mask = df['Time'] == '24:00:00'
@@ -46,22 +46,22 @@ def clean_df(df):
 
     # new date col
     df['date'] = pd.to_datetime(df['Day'], format='%d-%b-%y') + pd.to_timedelta(df['Time'])
-    print("[DEBUG:clean_df] => After creating 'date', shape:", df.shape)
-    print("[DEBUG:clean_df] => HEAD(5):\n", df.head(5))
+    # print("[DEBUG:clean_df] => After creating 'date', shape:", df.shape)
+    # print("[DEBUG:clean_df] => HEAD(5):\n", df.head(5))
 
     df.dropna(subset=['date'], inplace=True)
-    print("[DEBUG:clean_df] => After dropna on 'date', shape:", df.shape)
+    # print("[DEBUG:clean_df] => After dropna on 'date', shape:", df.shape)
 
     df = df.loc[:, ~df.columns.duplicated(keep=False)]
-    print("[DEBUG:clean_df] => After dropping duplicate cols, shape:", df.shape)
+    # print("[DEBUG:clean_df] => After dropping duplicate cols, shape:", df.shape)
 
     df.set_index('date', inplace=True)
     if 'Day' in df.columns:
         df.drop(columns=['Day'], inplace=True)
     if 'Time' in df.columns:
         df.drop(columns=['Time'], inplace=True)
-    print("[DEBUG:clean_df] => Final shape after set_index & drop Day/Time =>", df.shape)
-    print("[DEBUG:clean_df] => HEAD(5):\n", df.head(5), "\n")
+    # print("[DEBUG:clean_df] => Final shape after set_index & drop Day/Time =>", df.shape)
+    # print("[DEBUG:clean_df] => HEAD(5):\n", df.head(5), "\n")
 
     return df
 
@@ -88,16 +88,16 @@ def combinedPlot(lstm_results: Path,
     lstm_df.loc[lstm_df['LSTM_Predicted'] < 0, 'LSTM_Predicted'] = 0
     physics_lstm_df.loc[physics_lstm_df['PLSTM_Predicted'] < 0, 'PLSTM_Predicted'] = 0
 
-    print("[DEBUG - combinedPlot] => LSTM shape:", lstm_df.shape)
-    print("[DEBUG - combinedPlot] => LSTM columns:", lstm_df.columns.tolist())
-    print("[DEBUG - combinedPlot] => Physics LSTM shape:", physics_lstm_df.shape)
-    print("[DEBUG - combinedPlot] => Physics LSTM columns:", physics_lstm_df.columns.tolist())
+    # print("[DEBUG - combinedPlot] => LSTM shape:", lstm_df.shape)
+    # print("[DEBUG - combinedPlot] => LSTM columns:", lstm_df.columns.tolist())
+    # print("[DEBUG - combinedPlot] => Physics LSTM shape:", physics_lstm_df.shape)
+    # print("[DEBUG - combinedPlot] => Physics LSTM columns:", physics_lstm_df.columns.tolist())
 
     # 3) Load & Clean HMS
     hms_df = pd.read_csv(HMS_results)
-    print("[DEBUG - combinedPlot] => raw HMS shape:", hms_df.shape)
+    # print("[DEBUG - combinedPlot] => raw HMS shape:", hms_df.shape)
     cleaned_hms_df = clean_df(hms_df)
-    print("[DEBUG - combinedPlot] => cleaned HMS shape:", cleaned_hms_df.shape)
+    # print("[DEBUG - combinedPlot] => cleaned HMS shape:", cleaned_hms_df.shape)
     if len(cleaned_hms_df.columns) > 0:
         main_col = cleaned_hms_df.columns[0]
         # rename first column => 'HMS_Predicted'
@@ -105,23 +105,23 @@ def combinedPlot(lstm_results: Path,
 
     cleaned_hms_df = cleaned_hms_df.reset_index().rename(columns={'date': 'Date'})
     cleaned_hms_df = cleaned_hms_df[['Date', 'HMS_Predicted']]
-    print("[DEBUG - combinedPlot] => final HMS shape:", cleaned_hms_df.shape)
+    # print("[DEBUG - combinedPlot] => final HMS shape:", cleaned_hms_df.shape)
 
     # 4) Merge => LSTM + HMS
-    print("[DEBUG - combinedPlot] => Merging LSTM with HMS [INNER JOIN] ...")
+    # print("[DEBUG - combinedPlot] => Merging LSTM with HMS [INNER JOIN] ...")
     df_1 = lstm_df.merge(cleaned_hms_df, how='inner', on='Date')
-    print("[DEBUG - combinedPlot] => after LSTM/HMS merge => shape:", df_1.shape)
+    # print("[DEBUG - combinedPlot] => after LSTM/HMS merge => shape:", df_1.shape)
 
     # 5) Merge => combined + Phys LSTM
-    print("[DEBUG - combinedPlot] => Merging with Phys-LSTM [INNER JOIN] ...")
+    # print("[DEBUG - combinedPlot] => Merging with Phys-LSTM [INNER JOIN] ...")
     df = df_1.merge(physics_lstm_df, how='inner', on='Date')
-    print("[DEBUG - combinedPlot] => after final merge => shape:", df.shape)
+    # print("[DEBUG - combinedPlot] => after final merge => shape:", df.shape)
 
-    print("[DEBUG - combinedPlot] => columns:", df.columns.tolist())
-    print("[DEBUG - combinedPlot] => HEAD:\n", df.head(5))
-    print("[DEBUG - combinedPlot] => TAIL:\n", df.tail(5))
-    for c in df.columns:
-        print(f"[DEBUG - combinedPlot] => NaN count in '{c}' => {df[c].isna().sum()}")
+    # print("[DEBUG - combinedPlot] => columns:", df.columns.tolist())
+    # print("[DEBUG - combinedPlot] => HEAD:\n", df.head(5))
+    # print("[DEBUG - combinedPlot] => TAIL:\n", df.tail(5))
+    # for c in df.columns:
+    #     print(f"[DEBUG - combinedPlot] => NaN count in '{c}' => {df[c].isna().sum()}")
 
     # Ensure numeric
     df['Observed'] = pd.to_numeric(df['Observed'], errors='coerce')

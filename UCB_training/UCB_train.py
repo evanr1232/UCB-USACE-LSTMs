@@ -58,13 +58,12 @@ class UCB_trainer:
         self._basin_name = None
         self._target_variable = None
 
-        # EXTRA DEBUG: Path details
-        print("[DEBUG:UCB_trainer] => Initializing with:")
-        print(f"  path_to_csv_folder={path_to_csv_folder}, yaml_path={yaml_path}")
-        print(f"  hyperparams={hyperparams}")
-        print(f"  input_features={input_features}, basin={basin}")
-        print(f"  is_mts={is_mts}, is_mts_data={is_mts_data}, hourly={hourly}")
-        print(f"  physics_informed={physics_informed}, physics_data_file={physics_data_file}")
+        # print("[DEBUG:UCB_trainer] => Initializing with:")
+        # print(f"  path_to_csv_folder={path_to_csv_folder}, yaml_path={yaml_path}")
+        # print(f"  hyperparams={hyperparams}")
+        # print(f"  input_features={input_features}, basin={basin}")
+        # print(f"  is_mts={is_mts}, is_mts_data={is_mts_data}, hourly={hourly}")
+        # print(f"  physics_informed={physics_informed}, physics_data_file={physics_data_file}")
 
         self._create_config()
 
@@ -74,12 +73,12 @@ class UCB_trainer:
         """
         if self._num_ensemble_members == 1:
             path = self._train_model()
-            print(f"[DEBUG:train] => Single-model run_dir = {path}")
+            # print(f"[DEBUG:train] => Single-model run_dir = {path}")
             self._eval_model(path, period="validation")
             self._model = path
         else:
             self._model = self._train_ensemble()
-            print("[DEBUG:train] => Ensemble run_dirs =", self._model)
+            # print("[DEBUG:train] => Ensemble run_dirs =", self._model)
             for model_path in self._model:
                 self._eval_model(model_path, period="validation")
 
@@ -94,11 +93,12 @@ class UCB_trainer:
         else:
             time_resolution_key = '1h' if self._hourly else '1D'
 
-        print(f"[DEBUG:results] => period='{period}', mts_trk='{mts_trk}', time_resolution_key='{time_resolution_key}'")
+        # print(f"[DEBUG:results] => period='{period}', mts_trk='{mts_trk}', time_resolution_key='{time_resolution_key}'")
         self._get_predictions(time_resolution_key, period)
-        print("[DEBUG:results] => predictions loaded OK")
+        # print("[DEBUG:results] => predictions loaded OK")
 
-        self._generate_obs_sim_plt(period)
+        # COMMENTED THIS OUT BECAUSE IT IS USING A LOT OF MEMORY
+        # self._generate_obs_sim_plt(period)
 
         self._metrics = calculate_all_metrics(self._observed, self._predictions)
         csv_path = self._generate_csv(period, freq_key=(time_resolution_key if self._is_mts else None))
@@ -112,14 +112,13 @@ class UCB_trainer:
     def _get_predictions(self, time_resolution_key, period='validation'):
         """
         Load predictions from the model's result files for the given period.
+        Only apply multi-timescale flattening logic if self._is_mts is True.
+        Otherwise, keep old behavior.
         """
         if self._num_ensemble_members == 1:
             # Single-model
             results_file = self._model / period / f"model_epoch{str(self._config.epochs).zfill(3)}" / f"{period}_results.p"
-            print(f"[DEBUG:_get_predictions] => Looking for single-model results at: {results_file}")
-
             if not results_file.exists():
-                print("[WARN:_get_predictions] => results_file doesn't exist, forcing eval_run")
                 self._eval_model(self._model, period)
             if not results_file.exists():
                 raise FileNotFoundError(f"Failed to evaluate or locate results for {period} => {results_file}")
@@ -127,66 +126,103 @@ class UCB_trainer:
             with open(results_file, "rb") as fp:
                 results = pickle.load(fp)
 
-            print("[DEBUG:_get_predictions] => results loaded, found basins:", list(results.keys()))
             self._basin_name = next(iter(results.keys()))
-            print(f"[DEBUG:_get_predictions] => using basin_name={self._basin_name}")
+            basin_dict = results[self._basin_name]
 
             self._target_variable = self._config.target_variables[0]
             observed_key = f"{self._target_variable}_obs"
             simulated_key = f"{self._target_variable}_sim"
-            print(f"[DEBUG:_get_predictions] => Observed key='{observed_key}', Sim key='{simulated_key}'")
 
-            # Dump aggregator frequency keys/time coords
-            print("[DEBUG:_get_predictions] => Dumping aggregator coordinate information...")
-            basin_dict = results[self._basin_name]
-            print("[DEBUG:_get_predictions] => basin keys =>", list(basin_dict.keys()))
             if time_resolution_key not in basin_dict:
                 raise KeyError(
                     f"time_resolution_key '{time_resolution_key}' not in results for basin '{self._basin_name}'. "
                     f"Found keys: {list(basin_dict.keys())}"
                 )
 
-            for freq_key_in_dict in basin_dict.keys():
-                print(f"   [DEBUG:_get_predictions] => freq_key = {freq_key_in_dict}")
-                if "xr" in basin_dict[freq_key_in_dict]:
-                    da_keys = list(basin_dict[freq_key_in_dict]["xr"].keys())
-                    print(f"       data array keys = {da_keys}")
-                    for da_key in da_keys:
-                        da = basin_dict[freq_key_in_dict]["xr"][da_key]
-                        if "date" in da.coords:
-                            print(f"       => {da_key} has {da.coords['date'].shape[0]} timesteps; ")
-                            print("          first 3 timestamps =", da.coords["date"].values[:3])
-                            print("          last 3 timestamps  =", da.coords["date"].values[-3:])
+            xr_dict = basin_dict[time_resolution_key]["xr"]
+            if observed_key not in xr_dict or simulated_key not in xr_dict:
+                raise KeyError(
+                    f"Missing '{observed_key}' or '{simulated_key}' in aggregator "
+                    f"'{time_resolution_key}' for basin '{self._basin_name}'."
+                )
+
+            obs_da = xr_dict[observed_key]
+            sim_da = xr_dict[simulated_key]
+
+            if self._is_mts:
+                if time_resolution_key == "1D":
+                    if "time_step" in obs_da.dims:
+                        obs_da = obs_da.isel(time_step=0)
+                        sim_da = sim_da.isel(time_step=0)
+                    # print("[DEBUG:_get_predictions] => MTS 1D aggregator final shape:", obs_da.shape)
+
+                elif time_resolution_key == "1H":
+                    if "time_step" in obs_da.dims:
+                        obs_da = obs_da.stack(stacked_time=("date", "time_step"))
+                        sim_da = sim_da.stack(stacked_time=("date", "time_step"))
+                        obs_da = obs_da.rename({"stacked_time": "time"})
+                        sim_da = sim_da.rename({"stacked_time": "time"})
+                        # print("[DEBUG:_get_predictions] => MTS 1H aggregator flattened shape:", obs_da.shape)
+                    else:
+                        print("[WARN] => The 1H aggregator has no 'time_step' dimension? shape=", obs_da.shape)
                 else:
-                    print(f"       => No 'xr' key in basin_dict[{freq_key_in_dict}].")
+                    print("[DEBUG:_get_predictions] => MTS ignoring unknown aggregator key:", time_resolution_key)
 
-            if observed_key not in basin_dict[time_resolution_key]['xr']:
-                raise KeyError(f"Observed key '{observed_key}' not found in {time_resolution_key} results.")
-            if simulated_key not in basin_dict[time_resolution_key]['xr']:
-                raise KeyError(f"Simulated key '{simulated_key}' not found in {time_resolution_key} results.")
+            else:
+                if "time_step" in obs_da.dims:
+                    obs_da = obs_da.isel(time_step=0)
+                    sim_da = sim_da.isel(time_step=0)
+                # print("[DEBUG:_get_predictions] => Non-MTS shape after old approach:", obs_da.shape)
 
-            self._observed = basin_dict[time_resolution_key]['xr'][observed_key].isel(time_step=0)
-            self._predictions = basin_dict[time_resolution_key]['xr'][simulated_key].isel(time_step=0)
-            print("[DEBUG:_get_predictions] => _observed shape:", self._observed.shape,
-                  " _predictions shape:", self._predictions.shape)
+            self._observed = obs_da
+            self._predictions = sim_da
+
+            # print("[DEBUG:_get_predictions] => final observed shape:", self._observed.shape,
+            #       " final predicted shape:", self._predictions.shape)
 
         else:
-            # Ensemble
-            print("[DEBUG:_get_predictions] => ENSEMBLE mode. run_dirs:", self._model)
+            # Ensemble logic
             results = create_results_ensemble(run_dirs=self._model, period=period)
-            print("[DEBUG:_get_predictions] => ensemble results loaded. keys =>", list(results.keys()))
             self._basin_name = next(iter(results.keys()))
+            basin_dict = results[self._basin_name]
+
             self._target_variable = self._config.target_variables[0]
             observed_key = f"{self._target_variable}_obs"
             simulated_key = f"{self._target_variable}_sim"
 
-            if observed_key not in results[self._basin_name][time_resolution_key]['xr']:
-                raise KeyError(f"Observed key '{observed_key}' not found in results for basin {self._basin_name}.")
-            if simulated_key not in results[self._basin_name][time_resolution_key]['xr']:
-                raise KeyError(f"Simulated key '{simulated_key}' not found in results for basin {self._basin_name}.")
+            if time_resolution_key not in basin_dict:
+                raise KeyError(
+                    f"time_resolution_key '{time_resolution_key}' not in ensemble results for "
+                    f"basin '{self._basin_name}'. Found keys: {list(basin_dict.keys())}"
+                )
 
-            self._observed = results[self._basin_name][time_resolution_key]['xr'][observed_key]
-            self._predictions = results[self._basin_name][time_resolution_key]['xr'][simulated_key]
+            xr_dict = basin_dict[time_resolution_key]["xr"]
+            obs_da = xr_dict[observed_key]
+            sim_da = xr_dict[simulated_key]
+
+            if self._is_mts:
+                # Same MTS logic for ensembles
+                if time_resolution_key == "1D":
+                    if "time_step" in obs_da.dims:
+                        obs_da = obs_da.isel(time_step=0)
+                        sim_da = sim_da.isel(time_step=0)
+                elif time_resolution_key == "1H":
+                    if "time_step" in obs_da.dims:
+                        obs_da = obs_da.stack(stacked_time=("date", "time_step"))
+                        sim_da = sim_da.stack(stacked_time=("date", "time_step"))
+                        obs_da = obs_da.rename({"stacked_time": "time"})
+                        sim_da = sim_da.rename({"stacked_time": "time"})
+            else:
+                # Non-MTS ensemble => old approach
+                if "time_step" in obs_da.dims:
+                    obs_da = obs_da.isel(time_step=0)
+                    sim_da = sim_da.isel(time_step=0)
+
+            self._observed = obs_da
+            self._predictions = sim_da
+
+            # print("[DEBUG:_get_predictions] => ENSEMBLE final shape, obs:", self._observed.shape,
+            #       "pred:", self._predictions.shape)
 
     def _generate_obs_sim_plt(self, period='validation'):
         """
@@ -225,6 +261,7 @@ class UCB_trainer:
     def _generate_csv(self, period='validation', freq_key: str = None) -> Path:
         """
         Save predictions to a CSV file in the run directory, e.g. "results_output_validation_1H.csv".
+        Only do special flattening/timestamp logic if self._is_mts == True and freq_key == '1H'.
         """
         if self._observed is None or self._predictions is None:
             print("[ERROR] Observed or predicted are None => skipping CSV.")
@@ -234,28 +271,88 @@ class UCB_trainer:
         if self._is_mts and freq_key:
             base_name += f"_{freq_key}"
         out = self._config.run_dir / f"{base_name}.csv"
-        print(f"[DEBUG:_generate_csv] => saving to {out}")
+        # print(f"[DEBUG:_generate_csv] => saving to {out}")
+
+        # --- Debug prints for shapes & coords ---
+        # print("[DEBUG:_generate_csv] => Observed DataArray dims:", self._observed.dims)
+        # print("[DEBUG:_generate_csv] => Observed DataArray shape:", self._observed.shape)
+        # for coord_name in self._observed.coords:
+        #     coord_vals = self._observed.coords[coord_name].values
+        #     if coord_vals.ndim == 0:
+        #         print(f"[DEBUG:_generate_csv] => coord '{coord_name}' is scalar:", coord_vals.item())
+        #     else:
+        #         print(f"[DEBUG:_generate_csv] => coord '{coord_name}' has shape {coord_vals.shape} -> first 5:", coord_vals[:5])
+
+        # print("----------------------------------------------------------")
+        # print("[DEBUG:_generate_csv] => Predictions DataArray dims:", self._predictions.dims)
+        # print("[DEBUG:_generate_csv] => Predictions DataArray shape:", self._predictions.shape)
+        for coord_name in self._predictions.coords:
+            coord_vals = self._predictions.coords[coord_name].values
+        #     if coord_vals.ndim == 0:
+        #         print(f"[DEBUG:_generate_csv] => coord '{coord_name}' is scalar:", coord_vals.item())
+        #     else:
+        #         print(f"[DEBUG:_generate_csv] => coord '{coord_name}' has shape {coord_vals.shape} -> first 5:", coord_vals[:5])
+        # print("----------------------------------------------------------")
 
         try:
-            # Extra debug
+            # SINGLE-MODEL RUN
             if self._num_ensemble_members == 1:
-                if "date" in self._observed.coords:
-                    obs_times = self._observed["date"].values
-                    sim_times = self._predictions["date"].values
-                    print("[DEBUG:_generate_csv] => aggregator daily time coords (observed) => first 5:", obs_times[:5])
-                    print("[DEBUG:_generate_csv] => aggregator daily time coords (simulated) => first 5:", sim_times[:5])
-                    df = pd.DataFrame({
-                        "Date": self._observed["date"].values,
-                        "Observed": self._observed.values,
-                        "Predicted": self._predictions.values
-                    })
+                # MTS 1H
+                if self._is_mts and freq_key == "1H":
+                    print("[DEBUG:_generate_csv] => MTS 1H CSV logic: create an hourly timestamp.")
+
+                    obs_df = self._observed.reset_index(self._observed.dims).to_dataframe(name="Observed")
+                    sim_df = self._predictions.reset_index(self._predictions.dims).to_dataframe(name="Predicted")
+
+                    merged_df = obs_df.join(sim_df, how="inner", lsuffix="_obs", rsuffix="_sim")
+
+                    if "date_obs" in merged_df.columns and "time_step_obs" in merged_df.columns:
+                        merged_df["Date"] = pd.to_datetime(merged_df["date_obs"]) \
+                                            + pd.to_timedelta(merged_df["time_step_obs"], unit="h")
+
+                        final_df = merged_df[["Date", "Observed", "Predicted"]].sort_values("Date")
+
+                    elif "time" in merged_df.columns and merged_df["time"].dtype == "object":
+                        def combine_tuple(tup):
+                            base_ts, hour_offset = tup
+                            return pd.to_datetime(base_ts) + pd.to_timedelta(hour_offset, unit="h")
+
+                        merged_df["Date"] = merged_df["time"].apply(combine_tuple)
+                        final_df = merged_df[["Date", "Observed", "Predicted"]].sort_values("Date")
+
+                    else:
+                        print("[DEBUG:_generate_csv] => aggregator appears to have a direct time dimension")
+                        possible_timecols = [c for c in merged_df.columns if "time" in c]
+                        if possible_timecols:
+                            time_col = possible_timecols[0]
+                            merged_df.rename(columns={time_col: "Date"}, inplace=True)
+                            final_df = merged_df[["Date", "Observed", "Predicted"]].sort_values("Date")
+                        else:
+                            print("[WARN] => no recognized 'time' col; output as is.")
+                            final_df = merged_df[["Observed", "Predicted"]]
+
+                    df = final_df.reset_index(drop=True)
+
+                # MTS 1D or LOCAL NOTEBOOKS
                 else:
-                    print("[WARN:_generate_csv] => date coord not found, fallback indexing.")
-                    df = pd.DataFrame({
-                        "Date": range(len(self._observed)),
-                        "Observed": self._observed.values,
-                        "Predicted": self._predictions.values
-                    })
+                    if "date" in self._observed.coords:
+                        obs_times = self._observed["date"].values
+                        sim_times = self._predictions["date"].values
+                        print("[DEBUG:_generate_csv] => aggregator 'date' => first few:", obs_times[:5])
+
+                        df = pd.DataFrame({
+                            "Date": obs_times,
+                            "Observed": self._observed.values,
+                            "Predicted": self._predictions.values
+                        })
+                    else:
+                        print("[WARN:_generate_csv] => 'date' coord not found, fallback indexing.")
+                        df = pd.DataFrame({
+                            "Date": range(len(self._observed)),
+                            "Observed": self._observed.values,
+                            "Predicted": self._predictions.values
+                        })
+            # ENSEMBLE
             else:
                 df = pd.DataFrame({
                     "Date": self._observed["datetime"].values,
@@ -264,6 +361,7 @@ class UCB_trainer:
                 })
 
             df.to_csv(out, index=False)
+
         except Exception as exc:
             print(f"[ERROR:_generate_csv] => Could not save CSV: {exc}")
 
@@ -271,9 +369,9 @@ class UCB_trainer:
 
     def _train_model(self) -> Path:
         """Train a single model instance with start_training()."""
-        print("[DEBUG:_train_model] => hyperparams:", self._hyperparams)
+        # print("[DEBUG:_train_model] => hyperparams:", self._hyperparams)
         start_training(self._config)
-        print("[DEBUG:_train_model] => training done => run_dir:", self._config.run_dir)
+        # print("[DEBUG:_train_model] => training done => run_dir:", self._config.run_dir)
         return self._config.run_dir
 
     def _train_ensemble(self) -> List[Path]:
@@ -285,7 +383,6 @@ class UCB_trainer:
             run_dirs.append(path)
             print(f"[DEBUG:_train_ensemble] => ensemble member {i} => path={path}")
 
-        # Evaluate each on validation/test if you want
         for rd in run_dirs:
             self._eval_model(rd, period="validation")
             self._eval_model(rd, period="test")
