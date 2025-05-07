@@ -7,6 +7,7 @@ import time
 import webbrowser
 import plotly.graph_objects as go
 from neuralhydrology.evaluation.metrics import calculate_all_metrics
+import math
 
 
 def clean_df(df):
@@ -427,3 +428,59 @@ def open_tensorboard(logdir: str, port: int = 6006):
         raise Exception(f"Failed to start TensorBoard: {e}")
 
     return process
+
+def fractional_multi_lr(
+        epochs: int,
+        fractions: list,
+        lrs: list,
+        round_up: bool = True
+) -> dict:
+    """
+    Build a milestone dictionary for an arbitrary piecewise learning-rate schedule.
+    - 'fractions' are N fractional breakpoints that sum up to <= 1.0
+    - 'lrs' are N+1 learning rates
+    - We generate N+1 segments in total.
+
+    Example:
+      fractions=[0.4, 0.3], lrs=[0.01, 0.005, 0.001]
+      => first 40% => LR=0.01
+         next 30% => LR=0.005
+         final 30% => LR=0.001
+
+    The dictionary might look like: {0:0.01, 7:0.005, 11:0.001} for epochs=16
+    (assuming round_up=True).
+
+    Args:
+      epochs (int): total epochs
+      fractions (list of float): fractional breakpoints, e.g. [0.4, 0.3, 0.2]
+        means first 40%, next 30%, next 20%, etc. The sum must be <= 1.0.
+      lrs (list of float): must have exactly len(fractions)+1 elements.
+        e.g. if fractions has length 2 => you have 3 LRs total.
+      round_up (bool): if True, uses math.ceil() for each boundary index; else floor.
+
+    Returns:
+      dict => e.g. {0: lrs[0], epX: lrs[1], epY: lrs[2], ...}
+
+    Note: If sum(fractions) < 1.0, the final portion from boundaryN to the end
+          gets the last LR in lrs.
+    """
+    if len(lrs) != len(fractions) + 1:
+        raise ValueError(
+            "Number of learning rates must be len(fractions) + 1. "
+            f"Got {len(lrs)} LRs and {len(fractions)} fractions.")
+
+    if sum(fractions) > 1.0:
+        raise ValueError(
+            f"The sum of fractions exceeds 1.0 => {sum(fractions)}")
+
+    schedule = {}
+
+    schedule[0] = lrs[0]
+    cumulative = 0.0
+    for i, frac in enumerate(fractions, start=1):
+        cumulative += frac
+        boundary_float = cumulative * epochs
+        boundary_index = math.ceil(boundary_float) if round_up else int(boundary_float)
+        schedule[boundary_index] = lrs[i]
+
+    return schedule
