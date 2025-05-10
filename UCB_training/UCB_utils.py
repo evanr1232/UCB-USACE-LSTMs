@@ -143,11 +143,21 @@ def combinedPlot(lstm_results: Path,
     sim_da_plstm = xr.DataArray(df['PLSTM_Predicted'].values, dims=["date"], coords={"date": df['Date']})
 
     # Compute metrics
+    hms_metrics = calculate_all_metrics(obs_da, sim_da_hms)
+    hms_metrics["PBIAS"] = calculate_pbias(obs_da, sim_da_hms)
+
+    lstm_metrics = calculate_all_metrics(obs_da, sim_da_lstm)
+    lstm_metrics["PBIAS"] = calculate_pbias(obs_da, sim_da_lstm)
+
+    plstm_metrics = calculate_all_metrics(obs_da, sim_da_plstm)
+    plstm_metrics["PBIAS"] = calculate_pbias(obs_da, sim_da_plstm)
+
     metrics = {
-        "HMS": calculate_all_metrics(obs_da, sim_da_hms),
-        "LSTM": calculate_all_metrics(obs_da, sim_da_lstm),
-        "Physics_Informed_LSTM": calculate_all_metrics(obs_da, sim_da_plstm),
+        "HMS": hms_metrics,
+        "LSTM": lstm_metrics,
+        "Physics_Informed_LSTM": plstm_metrics,
     }
+
     metrics_df = pd.DataFrame(metrics)
     metrics_df.to_csv(fName, index=True)
     print(f"[INFO] Wrote metrics CSV: {fName}")
@@ -209,10 +219,19 @@ def fancyCombinedPlot(lstm_results: Path, lstmPhysics_results: Path, HMS_results
     sim_da_lstm = xr.DataArray(df['LSTM_Predicted'].values, dims=["date"], coords={"date": df['Date']})
     sim_da_plstm = xr.DataArray(df['PLSTM_Predicted'].values, dims=["date"], coords={"date": df['Date']})
 
+    hms_metrics = calculate_all_metrics(obs_da, sim_da_hms)
+    hms_metrics["PBIAS"] = calculate_pbias(obs_da, sim_da_hms)
+
+    lstm_metrics = calculate_all_metrics(obs_da, sim_da_lstm)
+    lstm_metrics["PBIAS"] = calculate_pbias(obs_da, sim_da_lstm)
+
+    plstm_metrics = calculate_all_metrics(obs_da, sim_da_plstm)
+    plstm_metrics["PBIAS"] = calculate_pbias(obs_da, sim_da_plstm)
+
     metrics = {
-        "HMS": calculate_all_metrics(obs_da, sim_da_hms),
-        "LSTM": calculate_all_metrics(obs_da, sim_da_lstm),
-        "Physics_Informed_LSTM": calculate_all_metrics(obs_da, sim_da_plstm),
+        "HMS": hms_metrics,
+        "LSTM": lstm_metrics,
+        "Physics_Informed_LSTM": plstm_metrics,
     }
 
     metrics_df = pd.DataFrame(metrics)
@@ -230,7 +249,7 @@ def fancyCombinedPlot(lstm_results: Path, lstmPhysics_results: Path, HMS_results
     fig.update_layout(
         title=title,
         xaxis_title="Date",
-        yaxis_title="Inflow (cubic feet per second)",
+        yaxis_title="Inflow (cfs)",
         template="seaborn",
         hovermode="x unified",
         xaxis=dict(
@@ -269,14 +288,6 @@ def combinedPlotFromDf(
       3) Exports metrics to a CSV (fName)
       4) Optionally saves the final merged timeseries to 'timeseries_filename'
       5) Creates a Matplotlib figure (optionally saved to 'plot_filename')
-
-    Args:
-        df (pd.DataFrame): DataFrame with columns
-            ["Date", "Observed", "HMS_Predicted", "LSTM_Predicted", "PLSTM_Predicted"]
-        title (str): Plot title.
-        fName (str): CSV filename to save computed metrics. Defaults to "metrics.csv".
-        timeseries_filename (str, optional): If provided, will save the timeseries columns to CSV.
-        plot_filename (str, optional): If provided, will save the Matplotlib figure to this path.
     """
 
     df = df.copy()
@@ -293,10 +304,19 @@ def combinedPlotFromDf(
     sim_da_lstm = xr.DataArray(df["LSTM_Predicted"].values, dims=["date"], coords={"date": df["Date"]})
     sim_da_plstm = xr.DataArray(df["PLSTM_Predicted"].values, dims=["date"], coords={"date": df["Date"]})
 
+    hms_metrics = calculate_all_metrics(obs_da, sim_da_hms)
+    hms_metrics["PBIAS"] = calculate_pbias(obs_da, sim_da_hms)
+
+    lstm_metrics = calculate_all_metrics(obs_da, sim_da_lstm)
+    lstm_metrics["PBIAS"] = calculate_pbias(obs_da, sim_da_lstm)
+
+    plstm_metrics = calculate_all_metrics(obs_da, sim_da_plstm)
+    plstm_metrics["PBIAS"] = calculate_pbias(obs_da, sim_da_plstm)
+
     metrics_dict = {
-        "HMS": calculate_all_metrics(obs_da, sim_da_hms),
-        "LSTM": calculate_all_metrics(obs_da, sim_da_lstm),
-        "Physics_Informed_LSTM": calculate_all_metrics(obs_da, sim_da_plstm),
+        "HMS": hms_metrics,
+        "LSTM": lstm_metrics,
+        "Physics_Informed_LSTM": plstm_metrics,
     }
     metrics_df = pd.DataFrame(metrics_dict)
     metrics_df.to_csv(fName, index=True)
@@ -354,10 +374,19 @@ def fancyCombinedPlotFromDf(
     sim_da_lstm = xr.DataArray(df["LSTM_Predicted"].values, dims=["date"], coords={"date": df["Date"]})
     sim_da_plstm = xr.DataArray(df["PLSTM_Predicted"].values, dims=["date"], coords={"date": df["Date"]})
 
+    hms_metrics = calculate_all_metrics(obs_da, sim_da_hms)
+    hms_metrics["PBIAS"] = calculate_pbias(obs_da, sim_da_hms)
+
+    lstm_metrics = calculate_all_metrics(obs_da, sim_da_lstm)
+    lstm_metrics["PBIAS"] = calculate_pbias(obs_da, sim_da_lstm)
+
+    plstm_metrics = calculate_all_metrics(obs_da, sim_da_plstm)
+    plstm_metrics["PBIAS"] = calculate_pbias(obs_da, sim_da_plstm)
+
     metrics_dict = {
-        "HMS": calculate_all_metrics(obs_da, sim_da_hms),
-        "LSTM": calculate_all_metrics(obs_da, sim_da_lstm),
-        "Physics_Informed_LSTM": calculate_all_metrics(obs_da, sim_da_plstm),
+        "HMS": hms_metrics,
+        "LSTM": lstm_metrics,
+        "Physics_Informed_LSTM": plstm_metrics,
     }
     metrics_df = pd.DataFrame(metrics_dict)
     metrics_df.to_csv(fName, index=True)
@@ -416,18 +445,16 @@ def open_tensorboard(logdir: str, port: int = 6006):
 
     tb_command = f"tensorboard --logdir={logdir} --port={port} --host=0.0.0.0"  # TensorBoard command
     try:
-        # Start TensorBoard as a subprocess
         process = subprocess.Popen(tb_command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         time.sleep(5)
-        # Open TensorBoard in the default web browser
         url = f"http://localhost:{port}"
         webbrowser.open(url)
         print(f"TensorBoard started at {url} with logs from {logdir}")
-
     except Exception as e:
         raise Exception(f"Failed to start TensorBoard: {e}")
 
     return process
+
 
 def fractional_multi_lr(
         epochs: int,
@@ -447,34 +474,20 @@ def fractional_multi_lr(
          next 30% => LR=0.005
          final 30% => LR=0.001
 
-    The dictionary might look like: {0:0.01, 7:0.005, 11:0.001} for epochs=16
+    The dictionary might look like: {0: 0.01, 7: 0.005, 11: 0.001} for epochs=16
     (assuming round_up=True).
-
-    Args:
-      epochs (int): total epochs
-      fractions (list of float): fractional breakpoints, e.g. [0.4, 0.3, 0.2]
-        means first 40%, next 30%, next 20%, etc. The sum must be <= 1.0.
-      lrs (list of float): must have exactly len(fractions)+1 elements.
-        e.g. if fractions has length 2 => you have 3 LRs total.
-      round_up (bool): if True, uses math.ceil() for each boundary index; else floor.
-
-    Returns:
-      dict => e.g. {0: lrs[0], epX: lrs[1], epY: lrs[2], ...}
-
-    Note: If sum(fractions) < 1.0, the final portion from boundaryN to the end
-          gets the last LR in lrs.
     """
     if len(lrs) != len(fractions) + 1:
         raise ValueError(
             "Number of learning rates must be len(fractions) + 1. "
-            f"Got {len(lrs)} LRs and {len(fractions)} fractions.")
-
+            f"Got {len(lrs)} LRs and {len(fractions)} fractions."
+        )
     if sum(fractions) > 1.0:
         raise ValueError(
-            f"The sum of fractions exceeds 1.0 => {sum(fractions)}")
+            f"The sum of fractions exceeds 1.0 => {sum(fractions)}"
+        )
 
     schedule = {}
-
     schedule[0] = lrs[0]
     cumulative = 0.0
     for i, frac in enumerate(fractions, start=1):
@@ -484,3 +497,15 @@ def fractional_multi_lr(
         schedule[boundary_index] = lrs[i]
 
     return schedule
+
+
+def calculate_pbias(observed, simulated):
+    """
+    Calculate Percent Bias (PBIAS) between observed and simulated data.
+    PBIAS = [ (sum(Obs-Sim) / sum(Obs)) * 100 ]
+    """
+    if observed.shape != simulated.shape:
+        raise ValueError("Observed and simulated DataArrays must have the same shape.")
+
+    pbias = ((observed - simulated).sum() / observed.sum()) * 100
+    return pbias.item()
