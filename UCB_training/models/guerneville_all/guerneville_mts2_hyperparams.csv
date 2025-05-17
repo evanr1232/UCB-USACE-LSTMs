@@ -1,0 +1,3 @@
+hidden_size,seq_length_1D,seq_length_1H,num_layers,epochs,batch_size,learning_rate,output_dropout,NSE_1D,NSE_1H,model_type
+256,90,168,1,48,64,"{0: 0.01, 24: 0.005, 36: 0.001}",0.4,0.8020892441272736,0.864697203040123,no_physics
+128,90,336,1,48,64,"{0: 0.01, 24: 0.005, 36: 0.001}",0.4,0.8678109794855118,0.8929567635059357,physics

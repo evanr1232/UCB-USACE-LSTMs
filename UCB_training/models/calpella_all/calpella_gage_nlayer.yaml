@@ -19,7 +19,6 @@ test_end_date: "29/09/2009"
 
 # which GPU (id) to use [in format of cuda:0, cuda:1 etc, or cpu or None]
 device: cuda:0
-
 physics_informed: false
 physics_data_file: null
 
