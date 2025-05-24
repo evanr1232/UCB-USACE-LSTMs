@@ -60,18 +60,19 @@ class BaseTrainer(object):
         self._epoch = self._get_start_epoch_number()
 
         self._create_folder_structure()
-        setup_logging(str(self.cfg.run_dir / "output.log"))
-        LOGGER.info(f"### Folder structure created at {self.cfg.run_dir}")
+        if self.cfg.verbose:
+            setup_logging(str(self.cfg.run_dir / "output.log"))
+            LOGGER.info(f"### Folder structure created at {self.cfg.run_dir}")
 
-        if self.cfg.is_continue_training:
-            LOGGER.info(f"### Continue training of run stored in {self.cfg.base_run_dir}")
+            if self.cfg.is_continue_training:
+                LOGGER.info(f"### Continue training of run stored in {self.cfg.base_run_dir}")
 
-        if self.cfg.is_finetuning:
-            LOGGER.info(f"### Start finetuning with pretrained model stored in {self.cfg.base_run_dir}")
+            if self.cfg.is_finetuning:
+                LOGGER.info(f"### Start finetuning with pretrained model stored in {self.cfg.base_run_dir}")
 
-        LOGGER.info(f"### Run configurations for {self.cfg.experiment_name}")
-        for key, val in self.cfg.as_dict().items():
-            LOGGER.info(f"{key}: {val}")
+            LOGGER.info(f"### Run configurations for {self.cfg.experiment_name}")
+            for key, val in self.cfg.as_dict().items():
+                LOGGER.info(f"{key}: {val}")
 
         self._set_random_seeds()
         self._set_device()
@@ -151,12 +152,14 @@ class BaseTrainer(object):
 
         self.model = self._get_model().to(self.device)
         if self.cfg.checkpoint_path is not None:
-            LOGGER.info(f"Starting training from Checkpoint {self.cfg.checkpoint_path}")
+            if self.cfg.verbose:
+                LOGGER.info(f"Starting training from Checkpoint {self.cfg.checkpoint_path}")
             self.model.load_state_dict(torch.load(str(self.cfg.checkpoint_path), map_location=self.device))
         elif self.cfg.checkpoint_path is None and self.cfg.is_finetuning:
             # the default for finetuning is the last model state
             checkpoint_path = [x for x in sorted(list(self.cfg.base_run_dir.glob('model_epoch*.pt')))][-1]
-            LOGGER.info(f"Starting training from checkpoint {checkpoint_path}")
+            if self.cfg.verbose:
+                LOGGER.info(f"Starting training from checkpoint {checkpoint_path}")
             self.model.load_state_dict(torch.load(str(checkpoint_path), map_location=self.device))
 
         # Freeze model parts from pre-trained model.
@@ -207,14 +210,16 @@ class BaseTrainer(object):
         """
         for epoch in range(self._epoch + 1, self._epoch + self.cfg.epochs + 1):
             if epoch in self.cfg.learning_rate.keys():
-                LOGGER.info(f"Setting learning rate to {self.cfg.learning_rate[epoch]}")
+                if self.cfg.verbose:
+                    LOGGER.info(f"Setting learning rate to {self.cfg.learning_rate[epoch]}")
                 for param_group in self.optimizer.param_groups:
                     param_group["lr"] = self.cfg.learning_rate[epoch]
 
             self._train_epoch(epoch=epoch)
             avg_losses = self.experiment_logger.summarise()
             loss_str = ", ".join(f"{k}: {v:.5f}" for k, v in avg_losses.items())
-            LOGGER.info(f"Epoch {epoch} average loss: {loss_str}")
+            if self.cfg.verbose:
+                LOGGER.info(f"Epoch {epoch} average loss: {loss_str}")
 
             if epoch % self.cfg.save_weights_every == 0:
                 self._save_weights_and_optimizer(epoch)
@@ -232,7 +237,8 @@ class BaseTrainer(object):
                 if self.cfg.metrics:
                     print_msg += f" -- Median validation metrics: "
                     print_msg += ", ".join(f"{k}: {v:.5f}" for k, v in valid_metrics.items() if k != 'avg_total_loss')
-                    LOGGER.info(print_msg)
+                    if self.cfg.verbose:
+                        LOGGER.info(print_msg)
 
         # make sure to close tensorboard to avoid losing the last epoch
         if self.cfg.log_tensorboard:
@@ -259,7 +265,8 @@ class BaseTrainer(object):
 
         optimizer_path = self.cfg.base_run_dir / f"optimizer_state_epoch{epoch}.pt"
 
-        LOGGER.info(f"Continue training from epoch {int(epoch)}")
+        if self.cfg.verbose:
+            LOGGER.info(f"Continue training from epoch {int(epoch)}")
         self.model.load_state_dict(torch.load(weight_path, map_location=self.device))
         self.optimizer.load_state_dict(torch.load(str(optimizer_path), map_location=self.device))
 
@@ -350,7 +357,8 @@ class BaseTrainer(object):
                 self.device = torch.device("cpu")
         else:
             self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        LOGGER.info(f"### Device {self.device} will be used for training")
+        if self.cfg.verbose:
+            LOGGER.info(f"### Device {self.device} will be used for training")
 
     def _create_folder_structure(self):
         # create as subdirectory within run directory of base run

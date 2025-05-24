@@ -89,7 +89,8 @@ class MTSLSTM(BaseModel):
             input_sizes = {freq: input_sizes + len(cfg.dynamic_inputs[freq]) for freq in self._frequencies}
 
         if not isinstance(cfg.hidden_size, dict):
-            LOGGER.info("No specific hidden size for frequencies are specified. Same hidden size is used for all.")
+            if self.cfg.verbose:
+                LOGGER.info("No specific hidden size for frequencies are specified. Same hidden size is used for all.")
             self._hidden_size = {freq: cfg.hidden_size for freq in self._frequencies}
         else:
             self._hidden_size = cfg.hidden_size

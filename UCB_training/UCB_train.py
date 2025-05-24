@@ -23,7 +23,7 @@ class UCB_trainer:
     def __init__(self, path_to_csv_folder: Path, yaml_path: Path, hyperparams: dict,
                  input_features: List[str] = None, num_ensemble_members: int = 1,
                  physics_informed: bool = False, physics_data_file: Path = None,
-                 hourly: bool=False, extend_train_period: bool=False, gpu: int = -1, is_mts: bool = False):
+                 hourly: bool=False, extend_train_period: bool=False, gpu: int = -1, is_mts: bool = False, verbose: bool = True):
         """
         Initialize the UCB_trainer class with configurations and training parameters.
 
@@ -51,6 +51,7 @@ class UCB_trainer:
         self._hourly = hourly
         self._extended_train_period = extend_train_period
         self._is_mts = is_mts
+        self._is_verbose = verbose
 
         self._config = None
         self._create_config()
@@ -91,12 +92,14 @@ class UCB_trainer:
         else:
             time_resolution_key = '1h' if self._hourly else '1D'
 
-        # Load predictions from file
         self._get_predictions(time_resolution_key, period)
-        print('got predictions')
 
-        # Generate plot
-        self._generate_obs_sim_plt(period)
+        if self._is_verbose:
+            # Load predictions from file
+            print('got predictions')
+
+            # Generate plot
+            self._generate_obs_sim_plt(period)
 
         # Compute metrics
         self._metrics = calculate_all_metrics(self._observed, self._predictions)
@@ -228,7 +231,8 @@ class UCB_trainer:
                 "Predicted": self._predictions.values
             })
             df.to_csv(output_path, index=False)
-            print(f"[INFO] CSV output saved at: {output_path}")
+            if self._is_verbose:
+                print(f"[INFO] CSV output saved at: {output_path}")
         except Exception as exc:
             print(f"[ERROR] Could not save CSV. Reason: {exc}")
 
@@ -278,6 +282,7 @@ class UCB_trainer:
         config.update_config({'data_dir': self._data_dir}, dev_mode=True)
         config.update_config({'physics_informed': self._physics_informed}, dev_mode=True)
         config.update_config({'hourly': self._hourly}, dev_mode=True)
+        config.update_config({'verbose': self._is_verbose}, dev_mode=True)
 
         if self._physics_informed:
             if self._physics_data_file:
@@ -301,7 +306,8 @@ class UCB_trainer:
         #         print("[UCB Trainer] Using CPU (auto-detect fallback).")
         else:
             selected_device = "cpu"
-            print(f"[UCB Trainer] Using CPU (unhandled gpu={self._gpu}).")
+            if self._is_verbose:
+                print(f"[UCB Trainer] Using CPU (unhandled gpu={self._gpu}).")
 
         config.update_config({'device': selected_device}, dev_mode=True)
 
