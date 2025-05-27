@@ -81,91 +81,135 @@ def create_results_ensemble(run_dirs: List[Path],
 
 
 def _create_ensemble(results_files: List[Path], frequencies: List[str], config: Config) -> dict:
-    """Averages the predictions of the passed runs and re-calculates metrics. """
+    """Averages the predictions of the passed runs and re-calculates metrics."""
+    print("[DEBUG:_create_ensemble] => Starting function with frequencies:", frequencies)
+
     lowest_freq = sort_frequencies(frequencies)[0]
     ensemble_sum = defaultdict(dict)
     target_vars = config.target_variables
 
-    print('Loading results for each run.')
+    print("[DEBUG:_create_ensemble] => Loading results for each run.")
     for run in tqdm(results_files):
+        print(f"[DEBUG:_create_ensemble] => Reading run_results from: {run}")
         run_results = pickle.load(open(run, 'rb'))
         for basin, basin_results in run_results.items():
+            aggregator_keys = list(basin_results.keys())
+            print(f"[DEBUG:_create_ensemble] => Found basin '{basin}' with aggregator keys: {aggregator_keys}")
             for freq in frequencies:
                 freq_results = basin_results[freq]['xr']
 
                 # sum up the predictions of all basins
                 if freq not in ensemble_sum[basin]:
                     ensemble_sum[basin][freq] = freq_results
+                    print(f"[DEBUG:_create_ensemble] => Created initial freq_results for basin '{basin}', freq='{freq}'")
                 else:
                     for target_var in target_vars:
+                        print(f"[DEBUG:_create_ensemble] => Adding SIM for var '{target_var}' at basin '{basin}', freq='{freq}'")
                         ensemble_sum[basin][freq][f'{target_var}_sim'] += freq_results[f'{target_var}_sim']
 
     # divide the prediction sum by number of runs to get the mean prediction for each basin and frequency
     print('Combining results and calculating metrics.')
     ensemble = defaultdict(lambda: defaultdict(dict))
+
     for basin in tqdm(ensemble_sum.keys()):
+        print(f"[DEBUG:_create_ensemble] => Processing basin '{basin}'")
         for freq in frequencies:
+            print(f"[DEBUG:_create_ensemble] => freq='{freq}', lowest_freq='{lowest_freq}'")
             ensemble_xr = ensemble_sum[basin][freq]
 
             # combine date and time to a single index to calculate metrics
-            # create datetime range at the current frequency, removing time steps that are not being predicted
             frequency_factor = int(get_frequency_factor(lowest_freq, freq))
-            # make sure the last day is fully contained in the range
-            freq_date_range = pd.date_range(start=ensemble_xr.coords['date'].values[0],
-                                            end=ensemble_xr.coords['date'].values[-1]
-                                            + pd.Timedelta(days=1, seconds=-1),
-                                            freq=freq)
-            mask = np.ones(frequency_factor).astype(bool)
-            mask[:-len(ensemble_xr.coords['time_step'])] = False
-            freq_date_range = freq_date_range[np.tile(
-                mask, len(ensemble_xr.coords['date']))]
+            print(f"[DEBUG:_create_ensemble] => frequency_factor={frequency_factor}")
 
-            ensemble_xr = ensemble_xr.isel(time_step=slice(-frequency_factor, None)) \
-                .stack(datetime=['date', 'time_step']) \
+            # If freq == "1H", we skip adding the extra day:
+            if freq == "1h":
+                end_time = ensemble_xr.coords['date'].values[-1]
+                print(f"[DEBUG:_create_ensemble] => (hourly) end_time = {end_time}")
+            else:
+                # daily or other frequencies => old logic
+                end_time = ensemble_xr.coords['date'].values[-1] + pd.Timedelta(days=1, seconds=-1)
+                print(f"[DEBUG:_create_ensemble] => (non-hourly) end_time = {end_time}")
+
+            freq_date_range = pd.date_range(
+                start=ensemble_xr.coords['date'].values[0],
+                end=end_time,
+                freq=freq
+            )
+
+            print(f"[DEBUG:_create_ensemble] => freq_date_range[0] = {freq_date_range[0]}, freq_date_range[-1] = {freq_date_range[-1]}")
+            print(f"[DEBUG:_create_ensemble] => len(freq_date_range) = {len(freq_date_range)}")
+
+            mask = np.ones(frequency_factor).astype(bool)
+            print(f"[DEBUG:_create_ensemble] => mask.shape = {mask.shape}, mask = {mask}")
+            # next line: mask[:-len(...)] can cause issues if time_step is bigger/smaller than frequency_factor
+            print(f"[DEBUG:_create_ensemble] => # of date entries = {len(ensemble_xr.coords['date'])}")
+            print(f"[DEBUG:_create_ensemble] => time_step = {ensemble_xr.coords['time_step'].values}")
+
+            mask[:-len(ensemble_xr.coords['time_step'])] = False
+            tiled_mask = np.tile(mask, len(ensemble_xr.coords['date']))
+            print(f"[DEBUG:_create_ensemble] => tiled_mask.shape = {tiled_mask.shape}")
+
+            freq_date_range = freq_date_range[tiled_mask]
+
+            # Now stack the data:
+            # keep only the final part of time_step, then combine date/time
+            ensemble_xr = (
+                ensemble_xr
+                .isel(time_step=slice(-frequency_factor, None))
+                .stack(datetime=['date', 'time_step'])
                 .drop_vars({'datetime', 'date', 'time_step'})
+            )
             ensemble_xr['datetime'] = freq_date_range
+
+            print(f"[DEBUG:_create_ensemble] => after stacking, ensemble_xr shape: {ensemble_xr.sizes}")
+            print(f"[DEBUG:_create_ensemble] => freq_date_range final length: {len(freq_date_range)}")
+
             for target_var in target_vars:
                 # average predictions
-                ensemble_xr[f'{target_var}_sim'] = ensemble_xr[f'{target_var}_sim'] / \
-                    len(results_files)
+                print(f"[DEBUG:_create_ensemble] => dividing {target_var}_sim by {len(results_files)} runs")
+                ensemble_xr[f'{target_var}_sim'] = ensemble_xr[f'{target_var}_sim'] / len(results_files)
 
                 # clip predictions to zero
                 sim = ensemble_xr[f'{target_var}_sim']
                 if target_var in config.clip_targets_to_zero:
+                    print(f"[DEBUG:_create_ensemble] => clipping negative predictions to zero for {target_var}")
                     sim = xr.where(sim < 0, 0, sim)
 
                 # calculate metrics
-                metrics = config.metrics if isinstance(
-                    config.metrics, list) else config.metrics[target_var]
+                metrics = config.metrics if isinstance(config.metrics, list) else config.metrics[target_var]
                 if 'all' in metrics:
                     metrics = get_available_metrics()
                 try:
-                    ensemble_metrics = calculate_metrics(ensemble_xr[f'{target_var}_obs'],
-                                                         sim,
-                                                         metrics=metrics,
-                                                         resolution=freq)
+                    ensemble_metrics = calculate_metrics(
+                        ensemble_xr[f'{target_var}_obs'],
+                        sim,
+                        metrics=metrics,
+                        resolution=freq
+                    )
                 except AllNaNError as err:
                     msg = f'Basin {basin} ' \
-                        + (f'{target_var} ' if len(target_vars) > 1 else '') \
-                        + (f'{freq} ' if len(frequencies) > 1 else '') \
-                        + str(err)
+                          + (f'{target_var} ' if len(target_vars) > 1 else '') \
+                          + (f'{freq} ' if len(frequencies) > 1 else '') \
+                          + str(err)
                     print(msg)
                     ensemble_metrics = {metric: np.nan for metric in metrics}
 
                 # add variable identifier to metrics if needed
                 if len(target_vars) > 1:
-                    ensemble_metrics = {
-                        f'{target_var}_{key}': val for key, val in ensemble_metrics.items()}
+                    ensemble_metrics = {f'{target_var}_{key}': val for key, val in ensemble_metrics.items()}
                 # add frequency identifier to metrics if needed
                 if len(frequencies) > 1:
-                    ensemble_metrics = {
-                        f'{key}_{freq}': val for key, val in ensemble_metrics.items()}
+                    ensemble_metrics = {f'{key}_{freq}': val for key, val in ensemble_metrics.items()}
+
                 for metric, val in ensemble_metrics.items():
                     ensemble[basin][freq][metric] = val
 
             ensemble[basin][freq]['xr'] = ensemble_xr
+            print(f"[DEBUG:_create_ensemble] => Completed freq='{freq}' for basin='{basin}'")
 
+    print("[DEBUG:_create_ensemble] => Done combining results.")
     return dict(ensemble)
+
 
 
 def _get_medians(results: dict, metric='NSE') -> dict:
