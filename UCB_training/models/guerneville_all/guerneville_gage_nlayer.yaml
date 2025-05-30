@@ -176,4 +176,4 @@ target_variables:
 # clip negative predictions to zero for all variables listed below. Should be a list, even for single variables.
 clip_targets_to_zero:
 #   - QObs(mm/d)
-  - NR GUERNEVILLE FLOW COE GRN
+  - [NR GUERNEVILLE FLOW COE GRN]
