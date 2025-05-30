@@ -97,8 +97,9 @@ class Logger(object):
         if self.writer is not None:
             self.writer.add_figure(f'validation/timeseries/{freq}', figures, global_step=self.epoch)
 
-        for idx, figure in enumerate(figures):
-            figure.savefig(Path(self._img_log_dir, preamble + f'_freq{freq}_epoch{self.epoch}_{idx + 1}'), dpi=300)
+        # TEMPORARILY COMMENTED BECAUSE GETTING A WRITE ERROR
+        # # for idx, figure in enumerate(figures):
+        #     figure.savefig(Path(self._img_log_dir, preamble + f'_freq{freq}_epoch{self.epoch}_{idx + 1}'), dpi=300)
 
     def log_step(self, **kwargs):
         """Log the results of a single step within an epoch.
