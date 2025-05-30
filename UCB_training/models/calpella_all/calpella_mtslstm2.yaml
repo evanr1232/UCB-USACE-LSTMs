@@ -73,9 +73,10 @@ log_n_figures: 1
 save_weights_every: 16
 
 # --- Data Configuration -----------------------------------------------------
+dev_mode: True
 dataset: russian_river
 data_dir: "F:/Dino/UCB-USACE-LSTMs/data/updated_russian_river_folder/"
-dev_mode: True
+
 
 dynamic_inputs:
   1D:
