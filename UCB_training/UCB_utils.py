@@ -86,6 +86,7 @@ def combinedPlot(lstm_results: Path,
     # 2) Clean up negative predictions
     lstm_df['Date'] = pd.to_datetime(lstm_df['Date'])
     physics_lstm_df['Date'] = pd.to_datetime(physics_lstm_df['Date'])
+    lstm_df.loc[lstm_df['Observed'] < 0, 'Observed'] = 0
     lstm_df.loc[lstm_df['LSTM_Predicted'] < 0, 'LSTM_Predicted'] = 0
     physics_lstm_df.loc[physics_lstm_df['PLSTM_Predicted'] < 0, 'PLSTM_Predicted'] = 0
 
@@ -191,6 +192,7 @@ def fancyCombinedPlot(lstm_results: Path, lstmPhysics_results: Path, HMS_results
                       fName="metrics.csv", timeseries_filename: str = "combined_ts"):
     lstm_df = pd.read_csv(lstm_results).rename(columns={'Predicted': 'LSTM_Predicted'})
     lstm_df['Date'] = pd.to_datetime(lstm_df['Date'])
+    lstm_df.loc[lstm_df['Observed'] < 0, 'Observed'] = 0
     lstm_df.loc[lstm_df['LSTM_Predicted'] < 0, 'LSTM_Predicted'] = 0
 
     physics_lstm_df = pd.read_csv(lstmPhysics_results).rename(columns={'Predicted': 'PLSTM_Predicted'})
