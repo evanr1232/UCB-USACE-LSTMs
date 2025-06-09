@@ -1,0 +1,9 @@
+Get lat, lon, and drainage area from this link. Convert lat and lon to decimal degrees and draininge area to km^2
+https://waterdata.usgs.gov/nwis/inventory/?site_no=01013500
+
+Another good source of data
+https://streamstats.usgs.gov/ss/?gage=01013500&tab=info
+
+
+gauge_id;gauge_lat;gauge_lon;elev_mean;slope_mean;area_gages2;area_geospa_fabric
+11467000; 38.508611; -122.926667; ___; __; 3465.40662; ____

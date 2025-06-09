@@ -1,0 +1,1 @@
+gauge_id;soil_depth_pelletier;soil_depth_statsgo;soil_porosity;soil_conductivity;max_water_content;sand_frac;silt_frac;clay_frac;water_frac;organic_frac;other_frac

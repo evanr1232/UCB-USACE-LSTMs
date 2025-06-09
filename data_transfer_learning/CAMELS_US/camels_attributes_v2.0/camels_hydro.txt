@@ -1,0 +1,2 @@
+gauge_id;q_mean;runoff_ratio;slope_fdc;baseflow_index;stream_elas;q5;q95;high_q_freq;high_q_dur;low_q_freq;low_q_dur;zero_q_freq;hfd_mean
+11467000;2085.504859937213;0.589087492843217;1721.212121212121;0.5297537068522371;_______;91.0;10500.0;219;7.561643835616438;120;13.791666666666666;0.0;117.9019432400873
