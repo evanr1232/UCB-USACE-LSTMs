@@ -36,7 +36,7 @@ class RussianRiver(BaseDataset):
         cfg_dict = self.cfg.as_dict()
         is_mts_data_flag = cfg_dict.get("is_mts_data", False)
 
-        print(f"[DEBUG:_load_basin_data] => basin={basin}, is_mts_data={is_mts_data_flag}, physics_informed={self.cfg.physics_informed}")
+        # print(f"[DEBUG:_load_basin_data] => basin={basin}, is_mts_data={is_mts_data_flag}, physics_informed={self.cfg.physics_informed}")
 
         if is_mts_data_flag:
             return self._load_mts_data(basin)
