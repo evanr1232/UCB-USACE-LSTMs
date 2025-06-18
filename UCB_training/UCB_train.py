@@ -96,11 +96,11 @@ class UCB_trainer:
         else:
             time_resolution_key = '1h' if self._hourly else '1D'
 
-        # print(f"[DEBUG:results] => period='{period}', mts_trk='{mts_trk}', time_resolution_key='{time_resolution_key}'")
+        # print(f"[DEBUG:rgesults] => period='{period}', mts_trk='{mts_trk}', time_resolution_key='{time_resolution_key}'")
         self._get_predictions(time_resolution_key, period)
         # print("[DEBUG:results] => predictions loaded OK")
 
-        if self.verbose:
+        if self._verbose:
             self._generate_obs_sim_plt(period)
 
         self._metrics = calculate_all_metrics(self._observed, self._predictions)
