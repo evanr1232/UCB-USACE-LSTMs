@@ -14,6 +14,7 @@ from neuralhydrology.nh_run import eval_run
 from neuralhydrology.utils.nh_results_ensemble import create_results_ensemble
 from neuralhydrology.evaluation.metrics import calculate_all_metrics
 
+
 class UCB_trainer:
     """
     A wrapper to facilitate easier training/evaluation of neural hydrology models.
@@ -27,12 +28,13 @@ class UCB_trainer:
                  num_ensemble_members: int = 1,
                  physics_informed: bool = False,
                  physics_data_file: Path = None,
-                 hourly: bool=False,
-                 extend_train_period: bool=False,
+                 hourly: bool = False,
+                 extend_train_period: bool = False,
                  gpu: int = -1,
                  is_mts: bool = False,
                  is_mts_data: bool = False,
-                 basin: bool = None):
+                 basin: bool = None,
+                 verbose: bool = True):
         """
         Initialize the UCB_trainer class with configurations and training parameters.
         """
@@ -49,6 +51,7 @@ class UCB_trainer:
         self._is_mts = is_mts
         self._is_mts_data = is_mts_data
         self._basin = basin
+        self._verbose = verbose
 
         self._config = None
         self._model = None
@@ -59,11 +62,11 @@ class UCB_trainer:
         self._target_variable = None
 
         # print("[DEBUG:UCB_trainer] => Initializing with:")
-        # print(f"  path_to_csv_folder={path_to_csv_folder}, yaml_path={yaml_path}")
-        # print(f"  hyperparams={hyperparams}")
-        # print(f"  input_features={input_features}, basin={basin}")
-        # print(f"  is_mts={is_mts}, is_mts_data={is_mts_data}, hourly={hourly}")
-        # print(f"  physics_informed={physics_informed}, physics_data_file={physics_data_file}")
+        # print(f"path_to_csv_folder={path_to_csv_folder}, yaml_path={yaml_path}")
+        # print(f"hyperparams={hyperparams}")
+        # print(f"input_features={input_features}, basin={basin}")
+        # print(f"is_mts={is_mts}, is_mts_data={is_mts_data}, hourly={hourly}")
+        # print(f"physics_informed={physics_informed}, physics_data_file={physics_data_file}")
 
         self._create_config()
 
@@ -97,17 +100,35 @@ class UCB_trainer:
         self._get_predictions(time_resolution_key, period)
         # print("[DEBUG:results] => predictions loaded OK")
 
-        # COMMENTED THIS OUT BECAUSE IT IS USING A LOT OF MEMORY
-        # self._generate_obs_sim_plt(period)
+        if self.verbose:
+            self._generate_obs_sim_plt(period)
 
         self._metrics = calculate_all_metrics(self._observed, self._predictions)
         csv_path = self._generate_csv(period, freq_key=(time_resolution_key if self._is_mts else None))
         return csv_path, self._metrics
 
     def _eval_model(self, run_directory: Path, period="validation"):
-        """Evaluate a trained model. Uses the standard neuralhydrology eval_run."""
-        print(f"[DEBUG:_eval_model] => run_directory={run_directory}, period={period}")
+        # print(f"[DEBUG:_eval_model] => run_directory={run_directory}, period={period}")
         eval_run(run_dir=run_directory, period=period)
+
+        results_file = run_directory / period / f"model_epoch{str(self._config.epochs).zfill(3)}" / f"{period}_results.p"
+        if results_file.exists():
+            with open(results_file, "rb") as fp:
+                results = pickle.load(fp)
+            basin_name = list(results.keys())[0]
+            aggregator_keys = list(results[basin_name].keys())
+            # print(f"[DEBUG] => aggregator keys for {run_directory.name}:{period} => {aggregator_keys}")
+            for aggregator_key in aggregator_keys:
+                xr_dict = results[basin_name][aggregator_key]["xr"]
+                for var_name in xr_dict:
+                    da = xr_dict[var_name]
+                    # if "time_step" in da.dims:
+                    #     print(f"[DEBUG] => {run_directory.name}:{period}:{aggregator_key}:{var_name} "
+                    #           f"shape={da.shape}, time_step_len={da.sizes['time_step']}")
+                    # else:
+                    #     print(f"[DEBUG] => {run_directory.name}:{period}:{aggregator_key}:{var_name} shape={da.shape}")
+        else:
+            print(f"[WARN] => results_file not found: {results_file}")
 
     def _get_predictions(self, time_resolution_key, period='validation'):
         """
@@ -181,7 +202,7 @@ class UCB_trainer:
             #       " final predicted shape:", self._predictions.shape)
 
         else:
-            # Ensemble logic
+            # Ensemble
             results = create_results_ensemble(run_dirs=self._model, period=period)
             self._basin_name = next(iter(results.keys()))
             basin_dict = results[self._basin_name]
@@ -212,17 +233,50 @@ class UCB_trainer:
                         sim_da = sim_da.stack(stacked_time=("date", "time_step"))
                         obs_da = obs_da.rename({"stacked_time": "time"})
                         sim_da = sim_da.rename({"stacked_time": "time"})
-            else:
-                # Non-MTS ensemble => old approach
+
+            else:  # (1) #  Ensemble logic
+                results = create_results_ensemble(run_dirs=self._model, period=period)
+                self._basin_name = next(iter(results.keys()))
+                basin_dict = results[self._basin_name]
+
+                # print(f"[DEBUG:ensemble] => create_results_ensemble returned basins: {list(results.keys())}")
+                # print(f"[DEBUG:ensemble] => aggregator keys for basin '{self._basin_name}': {list(basin_dict.keys())}")
+
+                self._target_variable = self._config.target_variables[0]
+                observed_key = f"{self._target_variable}_obs"
+                simulated_key = f"{self._target_variable}_sim"
+
+                if time_resolution_key not in basin_dict:
+                    raise KeyError(
+                        f"time_resolution_key '{time_resolution_key}' not in ensemble results for "
+                        f"basin '{self._basin_name}'. Found keys: {list(basin_dict.keys())}"
+                    )
+
+                xr_dict = basin_dict[time_resolution_key]["xr"]
+                obs_da = xr_dict[observed_key]
+                sim_da = xr_dict[simulated_key]
+
+                # print(f"[DEBUG:ensemble] => aggregator: '{time_resolution_key}'")
+                # print(f"[DEBUG:ensemble] => obs_da shape: {obs_da.shape}, dims: {obs_da.dims}")
+                # print(f"[DEBUG:ensemble] => sim_da shape: {sim_da.shape}, dims: {sim_da.dims}")
+
+                # If this is a simple hourly or daily run (not multi‐timescale),
+                # often the aggregator has a single (or zero-length) "time_step" dimension.
+                # We revert to the old approach and ignore that dimension if it’s present:
                 if "time_step" in obs_da.dims:
+                    # print("[DEBUG:ensemble] => 'time_step' in dims, isel(time_step=0)")
                     obs_da = obs_da.isel(time_step=0)
                     sim_da = sim_da.isel(time_step=0)
 
-            self._observed = obs_da
-            self._predictions = sim_da
+                # print(f"[DEBUG:ensemble] => final obs_da shape: {obs_da.shape}")
+                # print(f"[DEBUG:ensemble] => final sim_da shape: {sim_da.shape}")
 
-            # print("[DEBUG:_get_predictions] => ENSEMBLE final shape, obs:", self._observed.shape,
-            #       "pred:", self._predictions.shape)
+                # now just assign to self
+                self._observed = obs_da
+                self._predictions = sim_da
+
+                # print(f"[DEBUG:ensemble] => assigned self._observed shape: {self._observed.shape}, "
+                #       f"self._predictions shape: {self._predictions.shape}")
 
     def _generate_obs_sim_plt(self, period='validation'):
         """
@@ -299,7 +353,7 @@ class UCB_trainer:
             if self._num_ensemble_members == 1:
                 # MTS 1H
                 if self._is_mts and freq_key == "1H":
-                    print("[DEBUG:_generate_csv] => MTS 1H CSV logic: create an hourly timestamp.")
+                    # print("[DEBUG:_generate_csv] => MTS 1H CSV logic: create an hourly timestamp.")
 
                     obs_df = self._observed.reset_index(self._observed.dims).to_dataframe(name="Observed")
                     sim_df = self._predictions.reset_index(self._predictions.dims).to_dataframe(name="Predicted")
@@ -321,14 +375,14 @@ class UCB_trainer:
                         final_df = merged_df[["Date", "Observed", "Predicted"]].sort_values("Date")
 
                     else:
-                        print("[DEBUG:_generate_csv] => aggregator appears to have a direct time dimension")
+                        # print("[DEBUG:_generate_csv] => aggregator appears to have a direct time dimension")
                         possible_timecols = [c for c in merged_df.columns if "time" in c]
                         if possible_timecols:
                             time_col = possible_timecols[0]
                             merged_df.rename(columns={time_col: "Date"}, inplace=True)
                             final_df = merged_df[["Date", "Observed", "Predicted"]].sort_values("Date")
                         else:
-                            print("[WARN] => no recognized 'time' col; output as is.")
+                            # print("[WARN] => no recognized 'time' col; output as is.")
                             final_df = merged_df[["Observed", "Predicted"]]
 
                     df = final_df.reset_index(drop=True)
@@ -338,7 +392,7 @@ class UCB_trainer:
                     if "date" in self._observed.coords:
                         obs_times = self._observed["date"].values
                         sim_times = self._predictions["date"].values
-                        print("[DEBUG:_generate_csv] => aggregator 'date' => first few:", obs_times[:5])
+                        # print("[DEBUG:_generate_csv] => aggregator 'date' => first few:", obs_times[:5])
 
                         df = pd.DataFrame({
                             "Date": obs_times,
@@ -346,7 +400,7 @@ class UCB_trainer:
                             "Predicted": self._predictions.values
                         })
                     else:
-                        print("[WARN:_generate_csv] => 'date' coord not found, fallback indexing.")
+                        # print("[WARN:_generate_csv] => 'date' coord not found, fallback indexing.")
                         df = pd.DataFrame({
                             "Date": range(len(self._observed)),
                             "Observed": self._observed.values,
@@ -376,12 +430,12 @@ class UCB_trainer:
 
     def _train_ensemble(self) -> List[Path]:
         """Train multiple models as an ensemble."""
-        print("[DEBUG:_train_ensemble] => num_ensemble_members=", self._num_ensemble_members)
+        # print("[DEBUG:_train_ensemble] => num_ensemble_members=", self._num_ensemble_members)
         run_dirs = []
         for i in range(self._num_ensemble_members):
             path = self._train_model()
             run_dirs.append(path)
-            print(f"[DEBUG:_train_ensemble] => ensemble member {i} => path={path}")
+            # print(f"[DEBUG:_train_ensemble] => ensemble member {i} => path={path}")
 
         for rd in run_dirs:
             self._eval_model(rd, period="validation")
@@ -414,6 +468,7 @@ class UCB_trainer:
         config.update_config({'hourly': self._hourly}, dev_mode=True)
         config.update_config({'is_mts': self._is_mts}, dev_mode=True)
         config.update_config({'is_mts_data': self._is_mts_data}, dev_mode=True)
+        config.update_config({'verbose': self._verbose}, dev_mode=True)
 
         if self._physics_informed:
             if self._physics_data_file:
@@ -424,13 +479,16 @@ class UCB_trainer:
         # GPU or CPU
         if self._gpu == 0:
             selected_device = "cuda:0"
-            print("[UCB Trainer] Using CUDA device: 'cuda:0'")
+            if self._verbose:
+                print("[UCB Trainer] Using CUDA device: 'cuda:0'")
         elif self._gpu == -2:
             selected_device = "cpu"
-            print("[UCB Trainer] Forcing CPU (gpu=-2).")
+            if self._verbose:
+                print("[UCB Trainer] Forcing CPU (gpu=-2).")
         else:
             selected_device = "cpu"
-            print(f"[UCB Trainer] Using CPU (unhandled gpu={self._gpu}).")
+            if self._verbose:
+                print(f"[UCB Trainer] Using CPU (unhandled gpu={self._gpu}).")
 
         config.update_config({'device': selected_device}, dev_mode=True)
 

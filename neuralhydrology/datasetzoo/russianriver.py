@@ -95,8 +95,8 @@ class RussianRiver(BaseDataset):
         # print("[DEBUG:_load_single_freq] => shape AFTER clean_df:", df.shape)
         # print("[DEBUG:_load_single_freq] => first 5 index entries:", df.index[:5])
 
-        if len(df.index) > 1:
-            print("[DEBUG:_load_single_freq] => index[1] - index[0] =", df.index[1] - df.index[0])
+        # if len(df.index) > 1:
+        #     print("[DEBUG:_load_single_freq] => index[1] - index[0] =", df.index[1] - df.index[0])
 
         if self.cfg.physics_informed and self.cfg.physics_data_file:
             physics_path = self.cfg.physics_data_file
