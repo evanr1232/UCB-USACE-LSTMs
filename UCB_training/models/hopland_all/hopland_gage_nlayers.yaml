@@ -62,6 +62,7 @@ initial_forget_bias: 3
 output_dropout: 0.5
 
 num_layers: 1
+dev_mode: True
 
 # --- Training configuration -----------------------------------------------------------------------
 
