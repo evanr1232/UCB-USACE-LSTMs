@@ -8,6 +8,8 @@ import webbrowser
 import plotly.graph_objects as go
 from neuralhydrology.evaluation.metrics import calculate_all_metrics
 import math
+import json
+from typing import Union, List
 
 
 def clean_df(df):
@@ -40,7 +42,7 @@ def clean_df(df):
     mask = df['Time'] == '24:00:00'
     count_24hr = mask.sum()
     # if count_24hr > 0:
-        # print(f"[DEBUG:clean_df] => Found {count_24hr} rows with '24:00:00'")
+    # print(f"[DEBUG:clean_df] => Found {count_24hr} rows with '24:00:00'")
     df.loc[mask, 'Day'] = (pd.to_datetime(df.loc[mask, 'Day'], format='%d-%b-%y') + pd.Timedelta(days=1)) \
         .dt.strftime('%d-%b-%y')
     df['Time'] = df['Time'].replace('24:00:00', '00:00:00')
@@ -423,6 +425,7 @@ def fancyCombinedPlotFromDf(
     fig.show()
     return metrics_df
 
+
 def extended_combined_plot(
         lstm_results: Path,
         lstmPhysics_results: Path,
@@ -579,7 +582,6 @@ def extended_combined_plot_from_df(
         timeseries_filename: str | None = None,
         plot_filename: str | None = None,
         interactive: bool = False):
-
     """Extended version of :func:`combinedPlotFromDf` with optional subsetting
     and metric display.
 
@@ -778,3 +780,38 @@ def calculate_pbias(observed, simulated):
 
     pbias = ((observed - simulated).sum() / observed.sum()) * 100
     return pbias.item()
+
+
+def write_paths(tag: str, trainer, *, filename: str = "stored_runs.json") -> None:
+    """
+    Append or update the entry ``tag``  ➞  [list‑of‑run‑dirs] in a tiny JSON registry.
+
+    Parameters
+    ----------
+    tag : str
+        Human‑readable key, e.g. ``"no_physics"`` or ``"physics"``.
+    trainer : UCB_trainer | None
+        Must have ``trainer._model`` set to a Path or list[Path].
+    registry : str, optional
+        Filename of the JSON registry (default: ``stored_runs.json``).
+        Change this to keep multiple registries (e.g. one per basin).
+    """
+    if trainer is None:
+        print(f"trainer for tag '{tag}' is None – nothing written.")
+        return
+
+    run_dirs: Union[Path, List[Path]] = trainer._model
+    paths = run_dirs if isinstance(run_dirs, list) else [run_dirs]
+    paths = [str(p) for p in paths]
+
+    reg_file = Path(filename)
+    data = json.loads(reg_file.read_text()) if reg_file.exists() else {}
+    data[tag] = paths
+
+    reg_file.write_text(json.dumps(data, indent=2))
+    print(f"stored paths for '{tag}' in {reg_file.name}: {paths}")
+
+
+def to_path_or_list(seq):
+    seq = [Path(p) for p in seq]
+    return seq[0] if len(seq) == 1 else seq

@@ -13,6 +13,8 @@ from neuralhydrology.training.train import start_training
 from neuralhydrology.nh_run import eval_run
 from neuralhydrology.utils.nh_results_ensemble import create_results_ensemble
 from neuralhydrology.evaluation.metrics import calculate_all_metrics
+from neuralhydrology.evaluation.utils import metrics_to_dataframe
+import xarray as xr
 
 
 class UCB_trainer:
@@ -107,6 +109,110 @@ class UCB_trainer:
         csv_path = self._generate_csv(period, freq_key=(time_resolution_key if self._is_mts else None))
         return csv_path, self._metrics
 
+    @staticmethod
+    def from_run_dir(run_dirs, gpu: int = -1, verbose: bool = True):
+        """
+        Build a lightweight UCB_trainer whose only purpose is to call .predict().
+
+        Parameters
+        ----------
+        run_dirs : Path | str | List[Path | str]
+            Path of a single run folder **or** list of run folders (ensemble).
+        gpu : int, default -1
+            Device for evaluation (-1 → CPU, 0/1/… → CUDA id).
+        verbose : bool
+            Forwarded to internal plotting helpers (if any).
+        """
+        stub = UCB_trainer.__new__(UCB_trainer)
+        stub._model = run_dirs
+        stub._gpu = gpu
+        stub._verbose = verbose
+        stub._is_mts = False
+        return stub
+
+    def predict(self, period: str = "test", mts_trk: str | None = None, epoch: int | None = None, gpu: int | None = None):
+
+        if self._model is None:
+            raise RuntimeError("No model paths set.")
+
+        gpu = self._gpu if gpu is None else gpu
+        combo = {"train_validation": ["train", "validation"]}
+        sub_periods = combo.get(period, [period])
+
+        def _flatten(da):
+            if "time_step" not in da.dims:
+                return da
+            if da.sizes["time_step"] == 1:
+                return da.isel(time_step=0)
+            da = da.stack(time=("date", "time_step"))
+            mi = da["time"].to_index()
+            dt = pd.to_datetime(mi.get_level_values("date"))
+            hrs = pd.to_timedelta(mi.get_level_values("time_step"), unit="h")
+            da = da.assign_coords(time=("time", dt + hrs))
+            da = da.rename({"time": "date"})
+            return da
+
+        def _choose_freq(dct):
+            if mts_trk is not None and mts_trk in dct:
+                return mts_trk
+            return "1H" if "1H" in dct else next(iter(dct))
+
+        def _eval_one(rd: Path, per: str):
+            eval_run(run_dir=rd, period=per, epoch=epoch, gpu=gpu)
+            cfg = Config(rd / "config.yml")
+            use_ep = epoch if epoch is not None else cfg.epochs
+            pkl = rd / per / f"model_epoch{use_ep:03d}" / f"{per}_results.p"
+            res = pickle.load(open(pkl, "rb"))
+            basin = next(iter(res))
+            freq = _choose_freq(res[basin])
+            xr_obj = res[basin][freq]["xr"]
+            tgt = cfg.target_variables[0]
+            self._basin_name = basin
+            self._target_variable = tgt
+            return _flatten(xr_obj[f"{tgt}_sim"]), _flatten(xr_obj[f"{tgt}_obs"])
+
+        def _eval_period(per: str):
+            if isinstance(self._model, (str, Path)):
+                return _eval_one(Path(self._model), per)
+            run_dirs = [Path(p) for p in self._model]
+            for rd in run_dirs:
+                eval_run(run_dir=rd, period=per, epoch=epoch, gpu=gpu)
+            ens = create_results_ensemble(run_dirs, period=per, epoch=epoch)
+            basin = next(iter(ens))
+            freq = _choose_freq(ens[basin])
+            xr_obj = ens[basin][freq]["xr"]
+            tgt = Config(run_dirs[0] / "config.yml").target_variables[0]
+            self._basin_name = basin
+            self._target_variable = tgt
+            return _flatten(xr_obj[f"{tgt}_sim"]), _flatten(xr_obj[f"{tgt}_obs"])
+
+        preds, obss = zip(*[_eval_period(p) for p in sub_periods])
+        pred = xr.concat(preds, dim=preds[0].dims[0]) if len(preds) > 1 else preds[0]
+        obs = xr.concat(obss, dim=obss[0].dims[0]) if len(obss) > 1 else obss[0]
+
+        if obs.isnull().all():
+            met = {k: float("nan") for k in ["NSE", "MSE", "RMSE", "KGE", "Alpha-NSE", "Beta-KGE", "Beta-NSE",
+                                             "Pearson-r", "FHV", "FMS", "FLV", "Peak-Timing", "Peak-MAPE", "PBIAS"]}
+        else:
+            met = calculate_all_metrics(obs, pred)
+            met["PBIAS"] = self.calculate_pbias(obs, pred)
+
+        x = (obs["time"] if "time" in obs.coords else
+             obs["date"] if "date" in obs.coords else
+             range(obs.size))
+        plt.figure(figsize=(14, 6))
+        plt.plot(x, obs, label="Observed", linewidth=1.5)
+        plt.plot(x, pred, label="Simulated", linewidth=1.5)
+        plt.title(f"{self._basin_name or ''} – {period}")
+        plt.xlabel("Date")
+        plt.ylabel(self._target_variable)
+        plt.legend()
+        plt.grid(alpha=.4)
+        plt.tight_layout()
+        plt.show()
+
+        return pred, obs, pd.DataFrame([met])
+
     def _eval_model(self, run_directory: Path, period="validation"):
         # print(f"[DEBUG:_eval_model] => run_directory={run_directory}, period={period}")
         eval_run(run_dir=run_directory, period=period)
@@ -132,10 +238,10 @@ class UCB_trainer:
 
     def _get_predictions(self, time_resolution_key, period='validation'):
         """
-        Load predictions from the model's result files for the given period.
-        Only apply multi-timescale flattening logic if self._is_mts is True.
-        Otherwise, keep old behavior.
-        """
+            Load predictions from the model's result files for the given period.
+            Only apply multi-timescale flattening logic if self._is_mts is True.
+            Otherwise, keep old behavior.
+            """
         if self._num_ensemble_members == 1:
             # Single-model
             results_file = self._model / period / f"model_epoch{str(self._config.epochs).zfill(3)}" / f"{period}_results.p"
@@ -234,27 +340,13 @@ class UCB_trainer:
                         obs_da = obs_da.rename({"stacked_time": "time"})
                         sim_da = sim_da.rename({"stacked_time": "time"})
 
-            else:  # (1) #  Ensemble logic
-                results = create_results_ensemble(run_dirs=self._model, period=period)
-                self._basin_name = next(iter(results.keys()))
-                basin_dict = results[self._basin_name]
+                # assign immediately for MTS ensembles
+                self._observed = obs_da
+                self._predictions = sim_da
 
+            else:  # (1) #  Ensemble logic
                 # print(f"[DEBUG:ensemble] => create_results_ensemble returned basins: {list(results.keys())}")
                 # print(f"[DEBUG:ensemble] => aggregator keys for basin '{self._basin_name}': {list(basin_dict.keys())}")
-
-                self._target_variable = self._config.target_variables[0]
-                observed_key = f"{self._target_variable}_obs"
-                simulated_key = f"{self._target_variable}_sim"
-
-                if time_resolution_key not in basin_dict:
-                    raise KeyError(
-                        f"time_resolution_key '{time_resolution_key}' not in ensemble results for "
-                        f"basin '{self._basin_name}'. Found keys: {list(basin_dict.keys())}"
-                    )
-
-                xr_dict = basin_dict[time_resolution_key]["xr"]
-                obs_da = xr_dict[observed_key]
-                sim_da = xr_dict[simulated_key]
 
                 # print(f"[DEBUG:ensemble] => aggregator: '{time_resolution_key}'")
                 # print(f"[DEBUG:ensemble] => obs_da shape: {obs_da.shape}, dims: {obs_da.dims}")
@@ -501,3 +593,10 @@ class UCB_trainer:
             )
 
         return config
+
+    def calculate_pbias(self, observed, simulated):
+        if observed.shape != simulated.shape:
+            raise ValueError("Observed and simulated DataArrays must have the same shape.")
+
+        pbias = ((observed - simulated).sum() / observed.sum()) * 100
+        return pbias.item()
